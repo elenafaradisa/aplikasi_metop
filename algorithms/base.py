@@ -38,11 +38,10 @@ def build_distance_matrix(coords, metric="euclidean"):
     return matrix
 
 def tour_distance(tour, dist_matrix):
-    n = len(tour)
     total = 0.0
-    for k in range(n):
+    for k in range(len(tour) - 1):
         a = tour[k]
-        b = tour[(k + 1) % n]
+        b = tour[k + 1]
         total += dist_matrix[a][b]
     return total
 
@@ -50,11 +49,21 @@ def generate_initial_tour(n, home=0, seed=None):
     rng = random.Random(seed)
     others = [c for c in range(n) if c != home]
     rng.shuffle(others)
-    return [home] + others
+    return [home] + others + [home]
 
 def validate_tour(tour, n, home=0):
-    if sorted(tour) != list(range(n)):
-        raise ValueError("Tur harus memuat semua kota tepat satu kali.")
-    if tour[0] != home:
-        raise ValueError(f"Kota awal (home) harus di posisi pertama (city {home}).")
+    if len(tour) != n + 1:
+        raise ValueError("Tur closed harus memiliki n + 1 posisi.")
+
+    if tour[0] != home or tour[-1] != home:
+        raise ValueError(
+            f"Tur harus dimulai dan berakhir di home (city {home})."
+        )
+
+    if sorted(tour[:-1]) != list(range(n)):
+        raise ValueError(
+            "Tur harus memuat semua kota tepat satu kali, "
+            "kecuali home yang muncul kembali di akhir."
+        )
+
     return True
