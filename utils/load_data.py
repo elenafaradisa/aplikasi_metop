@@ -1,3 +1,4 @@
+import pandas as pd
 def load_data(file):
 
     if isinstance(file, pd.DataFrame):
