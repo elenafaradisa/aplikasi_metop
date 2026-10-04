@@ -1,97 +1,114 @@
-from .base import generate_initial_tour, validate_tour, tour_distance
+"""
+Nama Algoritma: Tabu Search
+Author: Indy
+Deskripsi singkat: Tabu Search untuk TSP. Neighborhood dibentuk pakai 2-opt
+                    (reverse segmen rute). Tiap iterasi, SEMUA kandidat 2-opt
+                    dievaluasi, dipilih yang terbaik di antara yang tidak tabu
+                    (atau yang tabu tapi memenuhi aspiration criterion --
+                    lebih baik dari solusi terbaik sejauh ini).
+"""
+
+from .base import tour_distance
 
 
-# Neighbor generator -- sama persis style-nya dengan get_neighbors()
-# di simulated_annealing.py (closed tour: index 0 dan index terakhir
-# sama-sama home, jadi keduanya nggak pernah ikut dibalik).
-def get_neighbors(tour):
+def get_neighbors(route):
+    """Semua kandidat 2-opt dari satu rute (closed tour: [home, ..., home])."""
     neighbors = []
-
-    for i in range(1, len(tour) - 2):
-        for j in range(i + 1, len(tour) - 1):
-
-            new_tour = list(tour)
-            new_tour[i:j + 1] = reversed(new_tour[i:j + 1])
-
-            neighbors.append({
-                "tour": new_tour,
-                "i": i,
-                "j": j
-            })
-
+    for i in range(1, len(route) - 2):
+        for j in range(i + 1, len(route) - 1):
+            new_route = list(route)
+            new_route[i:j + 1] = reversed(new_route[i:j + 1])
+            neighbors.append({"route": new_route, "i": i, "j": j})
     return neighbors
 
 
-# Edge yang dibuang oleh move (i, j) -- dipakai sebagai "atribut tabu".
-# Pakai city (bukan posisi), karena posisi city bisa geser antar iterasi
-# tapi identitas kota tidak.
-def removed_edges(tour, i, j):
-    e1 = frozenset((tour[i - 1], tour[i]))
-    e2 = frozenset((tour[j], tour[j + 1]))
+def removed_edges(route, i, j):
+    """Edge (pasangan kota) yang dibuang oleh move (i, j) -- atribut tabu."""
+    e1 = frozenset((route[i - 1], route[i]))
+    e2 = frozenset((route[j], route[j + 1]))
     return frozenset((e1, e2))
 
 
 def tabu_search(
+    # input utama
+    initial_route,
     dist_matrix,
-    initial_tour=None,
+
+    # parameter algoritma
+    max_iter=100,
     tabu_tenure=3,
-    max_iter=10,
-    seed=None,
     verbose_history=False,
 ):
     """
-    Tabu Search untuk TSP.
+    Menjalankan algoritma Tabu Search untuk TSP.
 
-    Step 1 : home city = tour[0] (dan tour[-1], karena closed tour).
-    Step 2 : initial solution (random via generate_initial_tour, atau
-             dikasih langsung lewat initial_tour). Total distance awal
-             jadi aspiration level. tabu_list mulai kosong.
-    Step 3 : i = 1 (loop "for it in range(1, max_iter + 1)" di bawah)
+    Step 1 : home city = initial_route[0] (dan initial_route[-1], closed tour).
+    Step 2 : initial_route jadi current solution. Total distance-nya jadi
+             aspiration level awal. tabu_list mulai kosong.
+    Step 3 : i = 1 (-> loop for iteration di bawah)
     Step 4 : tukar 2 arc jadi 2 arc baru (2-opt, lihat get_neighbors) ->
              hitung total distance tiap kandidat.
-    Step 5 : evaluasi SEMUA kandidat di neighborhood, pilih yang
-             admissible terbaik jadi current solution, update tabu_list.
+    Step 5 : evaluasi SEMUA kandidat di neighborhood, pilih yang admissible
+             terbaik jadi current solution, update tabu_list.
     Step 6 : i += 1, ulangi Step 4.
-    Step 7 : stop kalau iterasi == max_iter. Tur terbaik = hasil akhir.
+    Step 7 : stop kalau iterasi == max_iter. Rute terbaik = hasil akhir.
 
-    dist_matrix     : matrix jarak n x n (dari base.build_distance_matrix)
-    initial_tour    : closed tour [home, ..., home]. None -> random.
-    tabu_tenure     : berapa iterasi sebuah move dilarang diulang
-    max_iter        : jumlah iterasi (Step 7)
-    verbose_history : True -> tiap iterasi simpan semua kandidat yang
-                       dievaluasi (buat tab ilustrasi / debugging).
-                       False -> cuma ringkasan per iterasi.
+    Parameters
+    ----------
+    initial_route : list
+        Rute awal (closed tour: [home, ..., home]).
+    dist_matrix : list
+        Matriks jarak.
+    max_iter : int
+        Maksimum iterasi.
+    tabu_tenure : int
+        Berapa iterasi sebuah move dilarang diulang sebelum boleh dipakai lagi.
+    verbose_history : bool
+        False (default) -> history["candidates"] selalu [] (ringan, cukup
+        buat tab "Pilihan Metode").
+        True  -> history["candidates"] diisi SEMUA kandidat 2-opt yang
+        dievaluasi tiap iterasi, lengkap status tabu & aspiration-nya.
+        Dipakai buat tab "Ilustrasi" yang butuh nunjukin proses milihnya,
+        bukan cuma hasil akhir.
 
-    Return: (best_tour, best_distance, history)
+    Returns
+    -------
+    dict
+        {
+            "route": rute terbaik,
+            "distance": total jarak,
+            "history": riwayat iterasi
+        }
     """
-    n = len(dist_matrix)
 
-    if initial_tour is None:
-        current_tour = generate_initial_tour(n, seed=seed)
-    else:
-        validate_tour(initial_tour, n)
-        current_tour = list(initial_tour)
+    # =========================
+    # 1. Initialization
+    # =========================
 
-    current_distance = tour_distance(current_tour, dist_matrix)
+    current_route = list(initial_route)
+    current_distance = tour_distance(current_route, dist_matrix)
 
-    best_tour = list(current_tour)
+    best_route = list(current_route)
     best_distance = current_distance          # aspiration level awal (Step 2)
 
     tabu_list = {}   # atribut (removed_edges) -> iterasi kadaluarsa
 
     history = [{
         "iteration": 0,
-        "tour": list(current_tour),
+        "route": current_route.copy(),
         "distance": current_distance,
-        "best_distance": best_distance,
         "move": None,
-        "tabu_list": dict(tabu_list),
+        "tabu_list": tabu_list.copy(),
         "candidates": [],
     }]
 
-    for it in range(1, max_iter + 1):
+    # =========================
+    # 2. Main Algorithm
+    # =========================
 
-        neighbors = get_neighbors(current_tour)   # Step 4: semua kandidat 2-opt
+    for iteration in range(1, max_iter + 1):
+
+        neighbors = get_neighbors(current_route)   # Step 4: semua kandidat 2-opt
 
         candidate_log = []
         best_candidate = None
@@ -101,10 +118,10 @@ def tabu_search(
         # Step 5: evaluasi seluruh neighborhood, pilih admissible terbaik
         for nb in neighbors:
 
-            attr = removed_edges(current_tour, nb["i"], nb["j"])
-            d = tour_distance(nb["tour"], dist_matrix)
+            attr = removed_edges(current_route, nb["i"], nb["j"])
+            d = tour_distance(nb["route"], dist_matrix)
 
-            is_tabu = attr in tabu_list and tabu_list[attr] >= it
+            is_tabu = attr in tabu_list and tabu_list[attr] >= iteration
             aspiration_met = d < best_distance          # aspiration criterion
             admissible = (not is_tabu) or aspiration_met
 
@@ -125,34 +142,38 @@ def tabu_search(
 
         # fallback langka: semua kandidat tabu & tak satupun aspiration_met
         if best_candidate is None:
-            best_candidate = min(
-                neighbors,
-                key=lambda nb: tour_distance(nb["tour"], dist_matrix),
-            )
-            best_candidate_distance = tour_distance(best_candidate["tour"], dist_matrix)
-            best_candidate_attr = removed_edges(
-                current_tour, best_candidate["i"], best_candidate["j"]
-            )
+            best_candidate = min(neighbors, key=lambda nb: tour_distance(nb["route"], dist_matrix))
+            best_candidate_distance = tour_distance(best_candidate["route"], dist_matrix)
+            best_candidate_attr = removed_edges(current_route, best_candidate["i"], best_candidate["j"])
 
-        current_tour = best_candidate["tour"]
+        selected_move = {"i": best_candidate["i"], "j": best_candidate["j"]}
+
+        current_route = best_candidate["route"]
         current_distance = best_candidate_distance
 
         # update tabu list: tambah move yang baru dipakai, buang yang kadaluarsa
-        tabu_list[best_candidate_attr] = it + tabu_tenure
-        tabu_list = {k: v for k, v in tabu_list.items() if v >= it}
+        tabu_list[best_candidate_attr] = iteration + tabu_tenure
+        tabu_list = {k: v for k, v in tabu_list.items() if v >= iteration}
 
         if current_distance < best_distance:
             best_distance = current_distance
-            best_tour = list(current_tour)
+            best_route = current_route.copy()
 
         history.append({
-            "iteration": it,
-            "tour": list(current_tour),
+            "iteration": iteration,
+            "route": current_route.copy(),
             "distance": current_distance,
-            "best_distance": best_distance,
-            "move": {"i": best_candidate["i"], "j": best_candidate["j"]},
-            "tabu_list": dict(tabu_list),
+            "move": selected_move,
+            "tabu_list": tabu_list.copy(),
             "candidates": candidate_log,
         })
 
-    return best_tour, best_distance, history
+    # =========================
+    # 3. Return Result
+    # =========================
+
+    return {
+        "route": best_route,
+        "distance": best_distance,
+        "history": history
+    }
