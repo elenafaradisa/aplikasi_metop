@@ -1,4 +1,4 @@
-from utils import tour_distance, generate_initial_tour, validate_tour, get_neighbors
+from baseimport tour_distance, generate_initial_tour, validate_tour, get_neighbors
 
 def tabu_search(
     dist_matrix,
