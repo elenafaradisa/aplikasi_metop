@@ -875,178 +875,221 @@ with st.sidebar:
     )
 
 
-    # --------------------------------------------------------
-    # INITIAL SOLUTION
-    # --------------------------------------------------------
+# --------------------------------------------------------
+# INITIAL SOLUTION
+# --------------------------------------------------------
 
-    has_constructive = any(
-        ALGORITHMS[method]["needs_start_node"]
-        for method in selected_algorithms
-    )
+has_constructive = any(
+    ALGORITHMS[method]["needs_start_node"]
+    for method in selected_algorithms
+)
 
-    has_route_algorithm = any(
-        ALGORITHMS[method]["needs_initial_route"]
-        for method in selected_algorithms
-    )
-
-
-    if has_constructive or has_route_algorithm:
-
-        st.divider()
-
-        st.subheader(
-            "Initial Solution"
-        )
+has_route_algorithm = any(
+    ALGORITHMS[method]["needs_initial_route"]
+    for method in selected_algorithms
+)
 
 
-    # --------------------------------------------------------
-    # START NODE
-    # --------------------------------------------------------
+if has_constructive or has_route_algorithm:
 
-    start_node = None
-
-    if has_constructive:
-
-        st.selectbox(
-            "Start Node",
-            df["node"].tolist(),
-            key="independent_start_node",
-            help=(
-                "Digunakan oleh metode Constructive "
-                "untuk menentukan node awal."
-            )
-        )
-
-        start_node_label = st.session_state[
-            "independent_start_node"
-        ]
-
-        start_node = int(
-            df.index[
-                df["node"] == start_node_label
-            ][0]
-        )
+    st.divider()
+    st.subheader("Initial Solution")
 
 
-    # --------------------------------------------------------
-    # STARTING ROUTE
-    # --------------------------------------------------------
+    # ====================================================
+    # INITIAL SOLUTION PER ALGORITHM
+    # ====================================================
 
-    initial_route = None
+    initial_solutions = {}
 
-    if has_route_algorithm:
+    for idx, method in enumerate(selected_algorithms):
 
-        st.selectbox(
-            "Starting Route",
-            [
-                "Generate Random",
-                "Manual"
-            ],
-            key="independent_route_type",
-            help=(
-                "Local Search dan Metaheuristic "
-                "membutuhkan satu rute sebagai solusi awal."
-            )
-        )
+        config = ALGORITHMS[method]
 
-        route_type = st.session_state[
-            "independent_route_type"
-        ]
+        st.markdown(f"**{method}**")
 
 
-        # ----------------------------------------------------
-        # RANDOM ROUTE
-        # ----------------------------------------------------
+        # ------------------------------------------------
+        # CONSTRUCTIVE → START NODE
+        # ------------------------------------------------
 
-        if route_type == "Generate Random":
+        if config["needs_start_node"]:
 
-            seed = st.number_input(
-                "Seed",
-                min_value=0,
-                max_value=99999,
-                value=42,
-                step=1,
-                key="independent_initial_seed"
-            )
-
-            initial_route = generate_initial_tour(
-                len(df),
-                home=0,
-                seed=int(seed)
-            )
-
-
-        # ----------------------------------------------------
-        # MANUAL ROUTE
-        # ----------------------------------------------------
-
-        else:
-
-            st.caption(
-                "Tentukan urutan node setelah node pertama."
-            )
-
-            route_start = st.selectbox(
-                "Route Start",
+            start_node_label = st.selectbox(
+                "Start Node",
                 df["node"].tolist(),
-                key="independent_route_start"
+                key=f"independent_start_node_{method}",
+                help=(
+                    "Digunakan oleh metode Constructive "
+                    "untuk menentukan node awal."
+                )
             )
 
-            route_start_index = int(
+            start_node = int(
                 df.index[
-                    df["node"] == route_start
+                    df["node"] == start_node_label
                 ][0]
             )
 
-            remaining_nodes = [
-                node
-                for node in df["node"].tolist()
-                if node != route_start
+            initial_solutions[method] = {
+                "type": "start_node",
+                "start_node": start_node
+            }
+
+
+        # ------------------------------------------------
+        # LOCAL SEARCH / METAHEURISTIC → INITIAL ROUTE
+        # ------------------------------------------------
+
+        elif config["needs_initial_route"]:
+
+            # Kalau bukan algoritma pertama,
+            # user boleh memakai initial dari algoritma sebelumnya.
+            previous_algorithms = selected_algorithms[:idx]
+
+            reuse_options = [
+                "Generate Random",
+                "Manual"
             ]
 
-            route_order = st.multiselect(
-                "Node Order",
-                remaining_nodes,
-                key="independent_route_order"
-            )
+            if previous_algorithms:
 
-            if len(route_order) == len(remaining_nodes):
-
-                initial_route = [
-                    route_start_index
+                reuse_options += [
+                    f"Sama dengan {previous_algorithms[-1]}"
                 ]
 
-                for node in route_order:
+            route_type = st.selectbox(
+                "Starting Route",
+                reuse_options,
+                key=f"independent_route_type_{method}",
+                help=(
+                    "Local Search dan Metaheuristic "
+                    "membutuhkan satu rute sebagai solusi awal."
+                )
+            )
 
-                    initial_route.append(
-                        int(
-                            df.index[
-                                df["node"] == node
-                            ][0]
-                        )
-                    )
 
-                initial_route.append(
-                    route_start_index
+            # --------------------------------------------
+            # SAMA DENGAN ALGORITMA SEBELUMNYA
+            # --------------------------------------------
+
+            if route_type.startswith("Sama dengan"):
+
+                source_method = previous_algorithms[-1]
+
+                initial_solutions[method] = {
+                    "type": "same",
+                    "source": source_method
+                }
+
+
+            # --------------------------------------------
+            # RANDOM
+            # --------------------------------------------
+
+            elif route_type == "Generate Random":
+
+                seed = st.number_input(
+                    "Seed",
+                    min_value=0,
+                    max_value=99999,
+                    value=42,
+                    step=1,
+                    key=f"independent_initial_seed_{method}"
+                )
+
+                route = generate_initial_tour(
+                    len(df),
+                    home=0,
+                    seed=int(seed)
+                )
+
+                initial_solutions[method] = {
+                    "type": "route",
+                    "route": route
+                }
+
+
+            # --------------------------------------------
+            # MANUAL
+            # --------------------------------------------
+
+            elif route_type == "Manual":
+
+                route_start = st.selectbox(
+                    "Route Start",
+                    df["node"].tolist(),
+                    key=f"independent_route_start_{method}"
+                )
+
+                route_start_index = int(
+                    df.index[
+                        df["node"] == route_start
+                    ][0]
                 )
 
 
-    # --------------------------------------------------------
-    # WHEN DIFFERENT ALGORITHMS NEED DIFFERENT INPUT
-    # --------------------------------------------------------
-
-    if (
-        has_constructive
-        and has_route_algorithm
-    ):
-
-        st.caption(
-            "Start Node digunakan oleh Constructive, "
-            "sedangkan Starting Route digunakan oleh "
-            "Local Search dan Metaheuristic."
-        )
+                remaining_nodes = [
+                    node
+                    for node in df["node"].tolist()
+                    if node != route_start
+                ]
 
 
+                route_order = st.multiselect(
+                    "Node Order",
+                    remaining_nodes,
+                    key=f"independent_route_order_{method}"
+                )
+
+
+                if len(route_order) == len(remaining_nodes):
+
+                    route = [
+                        route_start_index
+                    ]
+
+                    for node in route_order:
+
+                        route.append(
+                            int(
+                                df.index[
+                                    df["node"] == node
+                                ][0]
+                            )
+                        )
+
+                    route.append(
+                        route_start_index
+                    )
+
+
+                    initial_solutions[method] = {
+                        "type": "route",
+                        "route": route
+                    }
+
+
+                    # ------------------------------------
+                    # FINAL INITIAL ROUTE
+                    # ------------------------------------
+
+                    st.caption("Final Initial Route")
+
+                    st.code(
+                        " → ".join(
+                            str(df.iloc[i]["node"])
+                            for i in route
+                        )
+                    )
+
+
+                else:
+
+                    st.caption(
+                        "Pilih seluruh node untuk membentuk rute."
+                    )
+                    
     # --------------------------------------------------------
     # ALGORITHM PARAMETERS
     # --------------------------------------------------------
