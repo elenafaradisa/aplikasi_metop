@@ -1,16 +1,10 @@
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
-
-import importlib
-import inspect
 import random
 import time
-
-
-# ============================================================
-# IMPORT BASE
-# ============================================================
+import importlib
+import inspect
+import plotly.graph_objects as go
 
 from algorithms.base import (
     build_distance_matrix,
@@ -23,7 +17,7 @@ from utils.load_data import load_data
 
 
 # ============================================================
-# KONFIGURASI HALAMAN
+# PAGE CONFIGURATION
 # ============================================================
 
 st.set_page_config(
@@ -34,165 +28,80 @@ st.set_page_config(
 
 
 # ============================================================
-# DAFTAR METODE
+# ALGORITHM REGISTRY
 # ============================================================
 
-INITIAL_METHODS = {
-    "Random": None,
-    "Nearest Neighbor": "nearest_neighbor",
-    "Nearest Insertion": "nearest_insertion",
-    "Farthest Insertion": "farthest_insertion",
-    "Arbitrary Insertion": "arbitrary_insertion"
+ALGORITHMS = {
+    # ---------------- Constructive / Greedy ----------------
+    "Nearest Neighbor": {
+        "key": "nearest_neighbor",
+        "category": "Constructive / Greedy",
+        "module": "algorithms.constructive"
+    },
+
+    "Nearest Insertion": {
+        "key": "nearest_insertion",
+        "category": "Constructive / Greedy",
+        "module": "algorithms.constructive"
+    },
+
+    "Farthest Insertion": {
+        "key": "farthest_insertion",
+        "category": "Constructive / Greedy",
+        "module": "algorithms.constructive"
+    },
+
+    "Arbitrary Insertion": {
+        "key": "arbitrary_insertion",
+        "category": "Constructive / Greedy",
+        "module": "algorithms.constructive"
+    },
+
+    # ---------------- Local Search ----------------
+    "2-opt": {
+        "key": "two_opt",
+        "category": "Local Search",
+        "module": "algorithms.local_search"
+    },
+
+    "3-opt": {
+        "key": "three_opt",
+        "category": "Local Search",
+        "module": "algorithms.local_search"
+    },
+
+    # ---------------- Metaheuristic ----------------
+    "Simulated Annealing": {
+        "key": "simulated_annealing",
+        "category": "Metaheuristic",
+        "module": "algorithms.simulated_annealing"
+    },
+
+    "Tabu Search": {
+        "key": "tabu_search",
+        "category": "Metaheuristic",
+        "module": "algorithms.tabu_search"
+    }
 }
 
-OPTIMIZATION_METHODS = {
-    "None": None,
-    "2-opt": "two_opt",
-    "3-opt": "three_opt",
-    "Simulated Annealing": "simulated_annealing",
-    "Tabu Search": "tabu_search"
-}
-
 
 # ============================================================
-# LOKASI FILE ALGORITMA
+# CONSTRUCTIVE & FULL-ROUTE METHODS
 # ============================================================
 
-SEARCH_MODULES = [
-    "algorithms.constructive",
-    "algorithms.simulated_anneling",
-    "algorithms.simulated_annealing",
-    "algorithms.tabu_search",
-    "algorithms.two_opt",
-    "algorithms.three_opt",
-    "algorithms.local_search"
+CONSTRUCTIVE_METHODS = [
+    "Nearest Neighbor",
+    "Nearest Insertion",
+    "Farthest Insertion",
+    "Arbitrary Insertion"
 ]
 
-
-# Beberapa kemungkinan nama fungsi
-ALIASES = {
-    "nearest_neighbor": [
-        "nearest_neighbor",
-        "nearest_neighbour",
-        "nn"
-    ],
-
-    "nearest_insertion": [
-        "nearest_insertion",
-        "ni"
-    ],
-
-    "farthest_insertion": [
-        "farthest_insertion",
-        "fi"
-    ],
-
-    "arbitrary_insertion": [
-        "arbitrary_insertion",
-        "random_insertion",
-        "ai"
-    ],
-
-    "two_opt": [
-        "two_opt",
-        "2opt",
-        "opt2"
-    ],
-
-    "three_opt": [
-        "three_opt",
-        "3opt",
-        "opt3"
-    ],
-
-    "simulated_annealing": [
-        "simulated_annealing",
-        "simulated_anneling",
-        "sa"
-    ],
-
-    "tabu_search": [
-        "tabu_search",
-        "tabu",
-        "ts"
-    ]
-}
-
-
-# ============================================================
-# DETEKSI ALGORITMA
-# ============================================================
-
-def discover_algorithms():
-    """
-    Mencari fungsi algoritma yang sudah tersedia.
-
-    Kalau file/fungsi belum ada:
-    tidak error, tetapi dianggap belum tersedia.
-    """
-
-    found = {}
-
-    for module_name in SEARCH_MODULES:
-
-        try:
-            module = importlib.import_module(module_name)
-
-        except Exception:
-            # File belum ada / belum bisa di-import
-            continue
-
-        for function_name, function in inspect.getmembers(
-            module,
-            inspect.isfunction
-        ):
-
-            if function_name.startswith("_"):
-                continue
-
-            normalized_function = function_name.lower().replace("_", "")
-
-            for algorithm_name, aliases in ALIASES.items():
-
-                normalized_aliases = [
-                    alias.lower().replace("_", "")
-                    for alias in aliases
-                ]
-
-                if normalized_function in normalized_aliases:
-
-                    found[algorithm_name] = {
-                        "module": module_name,
-                        "function": function_name,
-                        "function_object": function
-                    }
-
-    return found
-
-
-def get_algorithm(key):
-    """
-    Mengambil fungsi algoritma berdasarkan key.
-    """
-
-    algorithms = discover_algorithms()
-
-    return algorithms.get(key)
-
-
-# ============================================================
-# STATUS ALGORITMA
-# ============================================================
-
-def algorithm_status(key):
-
-    if key is None:
-        return True
-
-    if key == "random":
-        return True
-
-    return get_algorithm(key) is not None
+FULL_ROUTE_METHODS = [
+    "2-opt",
+    "3-opt",
+    "Simulated Annealing",
+    "Tabu Search"
+]
 
 
 # ============================================================
@@ -202,32 +111,177 @@ def algorithm_status(key):
 if "df" not in st.session_state:
     st.session_state.df = None
 
-if "runs" not in st.session_state:
-    st.session_state.runs = []
+if "results" not in st.session_state:
+    st.session_state.results = []
+
+if "manual_data" not in st.session_state:
+    st.session_state.manual_data = pd.DataFrame({
+        "node": ["A", "B", "C", "D", "E", "F"],
+        "x": [10, 60, 90, 70, 30, 20],
+        "y": [20, 80, 40, 10, 50, 90]
+    })
 
 
 # ============================================================
-# HEADER
+# HELPER FUNCTIONS
 # ============================================================
 
-st.markdown(
+def get_algorithm_function(method_name):
     """
-    <div style="
-        padding: 20px;
-        border-radius: 15px;
-        background: linear-gradient(135deg, #6C5CE7, #00B894);
-        color: white;
-        margin-bottom: 20px;
-    ">
-        <h1>🧭 TSP Learning & Optimization</h1>
-        <p>
-            Input Data → Initial Solution → Optimization →
-            Visualization → Comparison
-        </p>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+    Mencari fungsi algoritma dari module masing-masing.
+    """
+    info = ALGORITHMS.get(method_name)
+    if not info:
+        return None
+
+    module_name = info["module"]
+    function_name = info["key"]
+
+    try:
+        module = importlib.import_module(module_name)
+    except ImportError:
+        return None
+
+    return getattr(module, function_name, None)
+
+
+def algorithm_available(method_name):
+    """Cek keberadaan modul/fungsi algoritma."""
+    return get_algorithm_function(method_name) is not None
+
+
+def get_algorithm_requirements(method_name):
+    """
+    Memeriksa parameter fungsi untuk menentukan apakah memerlukan
+    home node, initial tour, atau kustom parameter lainnya.
+    """
+    func = get_algorithm_function(method_name)
+    reqs = {"home": False, "tour": False, "has_params": False}
+
+    if func is None:
+        # Jika belum diimplementasikan, gunakan logika kategori sederhana
+        if method_name in CONSTRUCTIVE_METHODS:
+            reqs["home"] = True
+        else:
+            reqs["tour"] = True
+            reqs["home"] = True
+        return reqs
+
+    sig = inspect.signature(func)
+    auto_params = {
+        "dist_matrix", "distance_matrix", "dist", "matrix", 
+        "coords", "coordinates", "points", "tour", "initial_tour", 
+        "route", "solution", "home", "start", "start_node", "n", "num_nodes"
+    }
+
+    for name in sig.parameters:
+        lname = name.lower()
+        if lname in {"home", "start", "start_node"}:
+            reqs["home"] = True
+        elif lname in {"tour", "initial_tour", "route", "solution"}:
+            reqs["tour"] = True
+        elif lname not in auto_params:
+            reqs["has_params"] = True
+
+    return reqs
+
+
+def render_algorithm_parameters(method_name):
+    """Menampilkan widget parameter dinamis berdasarkan signature fungsi algoritma."""
+    func = get_algorithm_function(method_name)
+    if func is None:
+        st.caption(f"⏳ Parameters for {method_name} are not available yet.")
+        return {}
+
+    sig = inspect.signature(func)
+    params = {}
+
+    auto_params = {
+        "dist_matrix", "distance_matrix", "dist", "matrix", 
+        "coords", "coordinates", "points", "tour", "initial_tour", 
+        "route", "solution", "home", "start", "start_node", "n", "num_nodes"
+    }
+
+    for name, parameter in sig.parameters.items():
+        if name.lower() in auto_params:
+            continue
+
+        label = name.replace("_", " ").title()
+
+        if parameter.default is inspect.Parameter.empty:
+            params[name] = st.number_input(f"{label} ({method_name})", value=10)
+        elif isinstance(parameter.default, bool):
+            params[name] = st.checkbox(f"{label} ({method_name})", value=parameter.default)
+        elif isinstance(parameter.default, int):
+            params[name] = st.number_input(f"{label} ({method_name})", value=parameter.default, step=1)
+        elif isinstance(parameter.default, float):
+            params[name] = st.number_input(f"{label} ({method_name})", value=float(parameter.default))
+        elif isinstance(parameter.default, str):
+            params[name] = st.text_input(f"{label} ({method_name})", value=parameter.default)
+
+    return params
+
+
+def run_algorithm(method_name, dist_matrix, coords, initial_route, home, parameters):
+    function = get_algorithm_function(method_name)
+    if function is None:
+        raise ValueError(f"Algoritma {method_name} belum tersedia.")
+
+    signature = inspect.signature(function)
+    kwargs = {}
+
+    for name in signature.parameters:
+        lname = name.lower()
+        if lname in {"dist_matrix", "distance_matrix", "dist", "matrix"}:
+            kwargs[name] = dist_matrix
+        elif lname in {"coords", "coordinates", "points"}:
+            kwargs[name] = coords
+        elif lname in {"tour", "initial_tour", "route", "solution"}:
+            kwargs[name] = initial_route
+        elif lname in {"home", "start", "start_node"}:
+            kwargs[name] = home
+        elif name in parameters:
+            kwargs[name] = parameters[name]
+
+    return function(**kwargs)
+
+
+def route_figure(df, tour, title="Route"):
+    if tour is None:
+        return None
+
+    x = [df.iloc[i]["x"] for i in tour]
+    y = [df.iloc[i]["y"] for i in tour]
+    labels = [str(df.iloc[i]["node"]) for i in tour]
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=x, y=y,
+            mode="lines+markers+text",
+            text=labels,
+            textposition="top center",
+            line=dict(width=2),
+            marker=dict(size=10)
+        )
+    )
+    fig.update_layout(
+        title=title,
+        height=450,
+        showlegend=False,
+        xaxis_title="X",
+        yaxis_title="Y",
+        yaxis=dict(scaleanchor="x")
+    )
+    return fig
+
+
+# ============================================================
+# PAGE HEADER
+# ============================================================
+
+st.title("🧭 TSP Learning & Optimization")
+st.caption("Pelajari dan bandingkan metode Constructive, Local Search, dan Metaheuristic untuk Travelling Salesman Problem.")
 
 
 # ============================================================
@@ -235,584 +289,322 @@ st.markdown(
 # ============================================================
 
 with st.sidebar:
-
     st.header("⚙️ Pengaturan")
+    st.divider()
 
+    # 1. DISTANCE
+    st.subheader("Distance Method")
     metric = st.radio(
-        "Jenis jarak",
-        ["euclidean", "manhattan"],
-        format_func=lambda x: x.capitalize()
+        "Select distance method:",
+        ["Euclidean", "Manhattan"],
+        label_visibility="collapsed"
     )
+    metric_key = metric.lower()
 
     st.divider()
 
-    st.subheader("📦 Status Algoritma")
+    # 2. ALGORITHM SELECTION
+    st.subheader("Algorithm Options")
+    selected_methods = st.multiselect(
+        "Select algorithm(s):",
+        list(ALGORITHMS.keys()),
+        label_visibility="collapsed",
+        help="You can select multiple algorithms to compare."
+    )
 
-    all_methods = {
-        **INITIAL_METHODS,
-        **OPTIMIZATION_METHODS
-    }
+    if not selected_methods:
+        st.caption("Select at least one algorithm to proceed.")
 
-    checked = set()
+    st.divider()
 
-    for method_name, key in all_methods.items():
+    # CEK KEBUTUHAN INPUT
+    requirements = [get_algorithm_requirements(m) for m in selected_methods]
+    needs_home = any(req["home"] for req in requirements)
+    needs_tour = any(req["tour"] for req in requirements)
 
-        if method_name in checked:
-            continue
+    # 3. INITIAL SOLUTION
+    st.subheader("Initial Solution")
+    home_index = 0
+    initial_route = None
 
-        checked.add(method_name)
+    if st.session_state.df is None:
+        st.info("Masukkan dataset terlebih dahulu untuk mengatur initial solution.")
+    else:
+        df_sidebar = st.session_state.df
+        node_labels = df_sidebar["node"].tolist()
 
-        if key is None:
-            st.markdown(
-                f"🟢 **{method_name}**"
+        if needs_home:
+            st.markdown("**Node awal / Home**")
+            selected_home = st.selectbox("Pilih node awal:", node_labels)
+            home_index = int(df_sidebar.index[df_sidebar["node"] == selected_home][0])
+
+        if needs_tour:
+            st.markdown("**Starting Route**")
+            st.caption("Metode Local Search / Metaheuristic membutuhkan satu rute lengkap sebagai solusi awal.")
+
+            route_mode = st.radio(
+                "Sumber initial route:",
+                ["Generate Random", "Pilih manual"],
+                horizontal=True
             )
 
-        elif algorithm_status(key):
-            st.markdown(
-                f"🟢 **{method_name}**"
-            )
+            if route_mode == "Generate Random":
+                seed = st.number_input("Seed", min_value=0, max_value=99999, value=42, step=1)
+                initial_route = generate_initial_tour(
+                    len(df_sidebar),
+                    home_index,
+                    seed=int(seed)
+                )
+            else:
+                remaining_nodes = [node for node in node_labels if node != node_labels[home_index]]
+                selected_order = st.multiselect("Urutan node:", remaining_nodes, placeholder="Pilih urutan node")
 
-        else:
-            st.markdown(
-                f"⏳ **{method_name}** — belum tersedia"
-            )
+                if len(selected_order) == len(remaining_nodes):
+                    initial_route = [home_index]
+                    for node in selected_order:
+                        idx = df_sidebar.index[df_sidebar["node"] == node][0]
+                        initial_route.append(idx)
+                    initial_route.append(home_index)
+
+                    st.caption(
+                        f"**Rute Terbentuk:** {node_labels[home_index]} → "
+                        f"{' → '.join(map(str, selected_order))} → "
+                        f"{node_labels[home_index]}"
+                    )
+                else:
+                    initial_route = None
+                    st.warning("Pilih semua node tersisa untuk membentuk initial route yang lengkap.")
+
+        elif needs_home and not needs_tour:
+            st.caption("Constructive method akan membentuk rute langsung dari node awal yang dipilih.")
+
+    st.divider()
+
+    # 4. PARAMETERS CONFIGURATION
+    st.subheader("Algorithm Parameters")
+    algorithms_parameters = {}
+
+    if not selected_methods:
+        st.caption("Select an algorithm above to display its parameters.")
+    else:
+        for method_name in selected_methods:
+            req = get_algorithm_requirements(method_name)
+            if req["has_params"]:
+                with st.expander(f"⚙️ {method_name} Parameters", expanded=False):
+                    algorithms_parameters[method_name] = render_algorithm_parameters(method_name)
+            else:
+                st.caption(f"ℹ️ {method_name} uses default settings (no parameters required).")
+
+    st.divider()
 
 
 # ============================================================
-# DATASET
+# MAIN PAGE - DATASET CONFIGURATION
 # ============================================================
 
-st.header("📂 1. Problem Setting")
+st.header("📂 Dataset Configuration")
 
-source = st.radio(
-    "Sumber data",
-    [
-        "Generate Random",
-        "Upload CSV / Excel",
-        "Input Manual"
-    ],
+input_type = st.radio(
+    "Input dataset:",
+    ["Generate", "Upload", "Manual"],
     horizontal=True
 )
 
-
 new_data = None
 
+if input_type == "Generate":
+    st.subheader("Generate Dataset")
+    c1, c2, c3, c4 = st.columns(4)
+    n_nodes = c1.number_input("Jumlah node", min_value=3, max_value=500, value=10)
+    seed = c2.number_input("Seed", min_value=0, value=42)
+    max_x = c3.number_input("Maksimum X", min_value=1, value=100)
+    max_y = c4.number_input("Maksimum Y", min_value=1, value=100)
 
-# ------------------------------------------------------------
-# RANDOM
-# ------------------------------------------------------------
-
-if source == "Generate Random":
-
-    col1, col2, col3, col4 = st.columns(4)
-
-    n = col1.number_input(
-        "Jumlah node",
-        min_value=3,
-        max_value=500,
-        value=10
-    )
-
-    seed = col2.number_input(
-        "Seed",
-        min_value=0,
-        max_value=99999,
-        value=42
-    )
-
-    xmax = col3.number_input(
-        "Maksimum X",
-        min_value=10,
-        value=100
-    )
-
-    ymax = col4.number_input(
-        "Maksimum Y",
-        min_value=10,
-        value=100
-    )
-
-    if st.button(
-        "🎲 Generate Data",
-        type="primary"
-    ):
-
+    if st.button("Generate Dataset", type="primary"):
         rng = random.Random(int(seed))
-
         new_data = pd.DataFrame({
-            "x": [
-                round(rng.uniform(0, xmax), 2)
-                for _ in range(int(n))
-            ],
-
-            "y": [
-                round(rng.uniform(0, ymax), 2)
-                for _ in range(int(n))
-            ]
+            "x": [round(rng.uniform(0, max_x), 2) for _ in range(int(n_nodes))],
+            "y": [round(rng.uniform(0, max_y), 2) for _ in range(int(n_nodes))]
         })
 
+elif input_type == "Upload":
+    st.subheader("Upload Dataset")
+    uploaded_file = st.file_uploader("Upload CSV atau Excel", type=["csv", "xlsx", "xls"])
+    if uploaded_file is not None and st.button("Gunakan Dataset", type="primary"):
+        new_data = uploaded_file
 
-# ------------------------------------------------------------
-# UPLOAD
-# ------------------------------------------------------------
-
-elif source == "Upload CSV / Excel":
-
-    uploaded_file = st.file_uploader(
-        "Upload file",
-        type=["csv", "xlsx", "xls"]
-    )
-
-    st.caption(
-        "CSV dapat menggunakan header x,y atau tanpa header."
-    )
-
-    if uploaded_file is not None:
-
-        if st.button(
-            "📥 Gunakan File",
-            type="primary"
-        ):
-            new_data = uploaded_file
-
-
-# ------------------------------------------------------------
-# MANUAL
-# ------------------------------------------------------------
-
-else:
-
-    if "manual_data" not in st.session_state:
-
-        st.session_state.manual_data = pd.DataFrame({
-            "node": ["A", "B", "C", "D", "E"],
-            "x": [10, 60, 90, 70, 30],
-            "y": [20, 80, 40, 10, 50]
-        })
-
-    edited_data = st.data_editor(
-        st.session_state.manual_data,
-        num_rows="dynamic",
-        use_container_width=True
-    )
-
-    if st.button(
-        "✍️ Gunakan Data Manual",
-        type="primary"
-    ):
-
+elif input_type == "Manual":
+    st.subheader("Input Manual")
+    edited_data = st.data_editor(st.session_state.manual_data, num_rows="dynamic", use_container_width=True)
+    if st.button("Gunakan Dataset", type="primary"):
         new_data = edited_data
 
-
-# ============================================================
-# MEMUAT DATA
-# ============================================================
-
+# Process Dataset
 if new_data is not None:
-
     try:
-
-        st.session_state.df = load_data(new_data)
-        st.session_state.runs = []
-
-        st.success("Data berhasil dimuat.")
-
+        processed_data = load_data(new_data)
+        st.session_state.df = processed_data
+        st.session_state.results = []
+        st.success("Dataset berhasil digunakan.")
+        st.rerun()
     except Exception as e:
-
-        st.error(
-            f"Gagal memuat data: {e}"
-        )
+        st.error(f"Gagal membaca dataset: {e}")
 
 
 # ============================================================
-# DATA AKTIF
+# ACTIVE DATASET VISUALIZATION & RUN ALGORITHM
 # ============================================================
 
-df = st.session_state.df
+if st.session_state.df is not None:
+    df = st.session_state.df
+    coords = list(zip(df["x"], df["y"]))
 
-
-if df is not None:
+    dist_matrix = build_distance_matrix(coords, metric=metric_key)
 
     st.divider()
+    st.subheader("Dataset")
 
-    st.subheader("Data Aktif")
+    left, right = st.columns([1, 1])
 
-    st.dataframe(
-        df,
-        use_container_width=True,
-        hide_index=True
-    )
+    with left:
+        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.caption(f"Jumlah node: {len(df)}")
 
-    # --------------------------------------------------------
-    # NODE AWAL
-    # --------------------------------------------------------
-
-    home_label = st.selectbox(
-        "Node awal / Home",
-        df["node"].tolist()
-    )
-
-    home = int(
-        df.index[
-            df["node"] == home_label
-        ][0]
-    )
-
-    # --------------------------------------------------------
-    # KOORDINAT
-    # --------------------------------------------------------
-
-    coords = list(
-        zip(
-            df["x"],
-            df["y"]
-        )
-    )
-
-    labels = df["node"].tolist()
-
-    # --------------------------------------------------------
-    # DISTANCE MATRIX
-    # --------------------------------------------------------
-
-    distance_matrix = build_distance_matrix(
-        coords,
-        metric
-    )
-
-    st.subheader(
-        f"📏 Distance Matrix — {metric.capitalize()}"
-    )
-
-    st.dataframe(
-        pd.DataFrame(
-            distance_matrix,
-            index=labels,
-            columns=labels
-        ).round(2),
-        use_container_width=True
-    )
-
-    # --------------------------------------------------------
-    # VISUALISASI NODE
-    # --------------------------------------------------------
-
-    fig = go.Figure()
-
-    fig.add_trace(
-        go.Scatter(
-            x=df["x"],
-            y=df["y"],
-            mode="markers+text",
-            text=df["node"],
-            textposition="top center",
-            marker=dict(
-                size=14
+    with right:
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter(
+                x=df["x"], y=df["y"],
+                mode="markers+text",
+                text=df["node"],
+                textposition="top center",
+                marker=dict(size=12)
             )
         )
-    )
-
-    fig.update_layout(
-        title="Sebaran Node",
-        height=450,
-        xaxis_title="X",
-        yaxis_title="Y",
-        yaxis=dict(
-            scaleanchor="x"
+        fig.update_layout(
+            title="Sebaran Node",
+            height=400,
+            showlegend=False,
+            xaxis_title="X",
+            yaxis_title="Y",
+            yaxis=dict(scaleanchor="x")
         )
-    )
+        st.plotly_chart(fig, use_container_width=True)
 
-    st.plotly_chart(
-        fig,
-        use_container_width=True
-    )
+    st.subheader(f"Distance Matrix — {metric}")
+    distance_df = pd.DataFrame(dist_matrix, index=df["node"], columns=df["node"])
+    st.dataframe(distance_df.round(2), use_container_width=True)
 
+    # RUN ALGORITHM
+    st.divider()
+    st.header("🚀 Results")
 
-# ============================================================
-# TABS
-# ============================================================
-
-tab_learn, tab_experiment, tab_results = st.tabs(
-    [
-        "📚 Learn Methods",
-        "🧪 Experiment",
-        "📊 Results"
-    ]
-)
-
-
-# ============================================================
-# LEARN METHODS
-# ============================================================
-
-with tab_learn:
-
-    st.header("📚 Learn Methods")
-
-    method_info = {
-
-        "Nearest Neighbor": (
-            "Greedy Heuristic",
-            "Memilih node terdekat dari node yang sedang dikunjungi."
-        ),
-
-        "Nearest Insertion": (
-            "Greedy Heuristic",
-            "Memilih node yang paling dekat dengan tour lalu menyisipkannya "
-            "pada posisi yang memberikan tambahan jarak paling kecil."
-        ),
-
-        "Farthest Insertion": (
-            "Greedy Heuristic",
-            "Memilih node yang paling jauh dari tour kemudian menyisipkannya "
-            "pada posisi terbaik."
-        ),
-
-        "Arbitrary Insertion": (
-            "Greedy Heuristic",
-            "Memilih node secara arbitrary kemudian menyisipkannya "
-            "pada posisi terbaik."
-        ),
-
-        "2-opt": (
-            "Local Search",
-            "Menghapus dua edge dan membalik sebagian tour untuk mencari "
-            "rute yang lebih pendek."
-        ),
-
-        "3-opt": (
-            "Local Search",
-            "Menghapus tiga edge dan mencoba beberapa kemungkinan "
-            "penyambungan kembali."
-        ),
-
-        "Simulated Annealing": (
-            "Metaheuristic",
-            "Dapat menerima solusi yang lebih buruk dengan probabilitas tertentu "
-            "agar dapat keluar dari local optimum."
-        ),
-
-        "Tabu Search": (
-            "Metaheuristic",
-            "Menggunakan tabu list untuk mencegah kembali ke move atau solusi "
-            "tertentu dalam beberapa iterasi."
-        )
-    }
-
-    selected_method = st.selectbox(
-        "Pilih metode",
-        list(method_info.keys())
-    )
-
-    category, description = method_info[
-        selected_method
-    ]
-
-    st.markdown(
-        f"### {selected_method}"
-    )
-
-    st.caption(
-        f"Kategori: {category}"
-    )
-
-    st.write(description)
-
-    st.info(
-        "Ilustrasi langkah algoritma akan ditampilkan "
-        "setelah modul algoritmanya selesai dibuat."
-    )
-
-
-# ============================================================
-# EXPERIMENT
-# ============================================================
-
-with tab_experiment:
-
-    st.header("🧪 Experiment")
-
-    if df is None:
-
-        st.info(
-            "Masukkan data terlebih dahulu pada Problem Setting."
-        )
-
+    if not selected_methods:
+        st.info("Pilih minimal satu algoritma pada sidebar.")
     else:
+        if st.button("▶️ Jalankan Algoritma", type="primary", use_container_width=True):
+            st.session_state.results = []  # Reset hasil eksekusi sebelumnya
 
-        col1, col2 = st.columns(2)
+            for method in selected_methods:
+                if not algorithm_available(method):
+                    st.warning(f"⏳ {method} belum tersedia. Algoritma masih dalam proses pengerjaan.")
+                    continue
 
-        # ----------------------------------------------------
-        # INITIAL SOLUTION
-        # ----------------------------------------------------
-
-        with col1:
-
-            st.subheader("1️⃣ Initial Solution")
-
-            initial_name = st.selectbox(
-                "Pilih metode initial solution",
-                list(INITIAL_METHODS.keys())
-            )
-
-            initial_key = INITIAL_METHODS[
-                initial_name
-            ]
-
-            if initial_key is not None:
-
-                if algorithm_status(initial_key):
-
-                    st.success(
-                        "Metode tersedia."
-                    )
-
+                if method in CONSTRUCTIVE_METHODS:
+                    route_input = None
                 else:
+                    if initial_route is None:
+                        st.error(f"{method} membutuhkan initial route lengkap.")
+                        continue
+                    route_input = initial_route
 
-                    st.warning(
-                        "⏳ Algoritma masih dibuat."
+                # Parameter pengguna
+                params = algorithms_parameters.get(method, {})
+
+                try:
+                    start_time = time.perf_counter()
+                    result = run_algorithm(
+                        method_name=method,
+                        dist_matrix=dist_matrix,
+                        coords=coords,
+                        initial_route=route_input,
+                        home=home_index,
+                        parameters=params
                     )
+                    elapsed = time.perf_counter() - start_time
 
-            else:
+                    # Parse hasil
+                    if isinstance(result, dict):
+                        final_route = result.get("tour", result.get("best_tour", result.get("final_tour")))
+                    else:
+                        final_route = result
 
-                st.success(
-                    "Random tersedia dari base.py."
-                )
+                    # Closed Tour Normalization
+                    if final_route is not None and len(final_route) == len(df):
+                        final_route = list(final_route)
+                        final_route.append(final_route[0])
 
-        # ----------------------------------------------------
-        # OPTIMIZATION
-        # ----------------------------------------------------
+                    final_distance = tour_distance(final_route, dist_matrix)
 
-        with col2:
+                    st.session_state.results.append({
+                        "method": method,
+                        "route": final_route,
+                        "distance": final_distance,
+                        "time": elapsed
+                    })
 
-            st.subheader("2️⃣ Optimization")
+                except Exception as e:
+                    st.error(f"{method} gagal dijalankan: {e}")
 
-            optimization_name = st.selectbox(
-                "Pilih metode optimasi",
-                list(OPTIMIZATION_METHODS.keys())
+    # DISPLAY RESULTS
+    if st.session_state.results:
+        st.subheader("Hasil Algoritma")
+
+        for i, result in enumerate(st.session_state.results):
+            method = result["method"]
+            route = result["route"]
+            distance = result["distance"]
+            elapsed = result["time"]
+
+            st.markdown(f"### {method}")
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Final Distance", f"{distance:.2f}")
+            c2.metric("Execution Time", f"{elapsed * 1000:.2f} ms")
+            c3.metric("Status", "Selesai")
+
+            st.write(
+                "**Final Route:**",
+                " → ".join(str(df.iloc[node]["node"]) for node in route)
             )
 
-            optimization_key = OPTIMIZATION_METHODS[
-                optimization_name
-            ]
+            fig = route_figure(df, route, title=f"Final Route — {method}")
+            st.plotly_chart(fig, use_container_width=True, key=f"result_{i}")
+            st.divider()
 
-            if optimization_key is not None:
+        # COMPARISON TABLE & CHARTS
+        if len(st.session_state.results) >= 2:
+            st.subheader("⚖️ Method Comparison")
 
-                if algorithm_status(optimization_key):
+            comparison = pd.DataFrame([
+                {
+                    "Method": r["method"],
+                    "Final Distance": round(r["distance"], 2),
+                    "Execution Time (ms)": round(r["time"] * 1000, 2)
+                }
+                for r in st.session_state.results
+            ])
 
-                    st.success(
-                        "Metode tersedia."
-                    )
+            st.dataframe(comparison, use_container_width=True, hide_index=True)
 
-                else:
+            c1, c2 = st.columns(2)
+            with c1:
+                fig_distance = go.Figure()
+                fig_distance.add_trace(go.Bar(x=comparison["Method"], y=comparison["Final Distance"]))
+                fig_distance.update_layout(title="Final Distance", yaxis_title="Distance", xaxis_title="Method")
+                st.plotly_chart(fig_distance, use_container_width=True)
 
-                    st.warning(
-                        "⏳ Algoritma masih dibuat."
-                    )
-
-            else:
-
-                st.success(
-                    "Tanpa optimasi."
-                )
-
-        # ----------------------------------------------------
-        # PARAMETER
-        # ----------------------------------------------------
-
-        st.divider()
-
-        st.subheader("⚙️ Parameter")
-
-        if optimization_key is not None:
-
-            algorithm = get_algorithm(
-                optimization_key
-            )
-
-            if algorithm is None:
-
-                st.info(
-                    "Parameter akan muncul setelah "
-                    "file algoritma tersedia."
-                )
-
-            else:
-
-                function = algorithm["function_object"]
-
-                signature = inspect.signature(
-                    function
-                )
-
-                st.code(
-                    f"{function.__name__}{signature}"
-                )
-
-        # ----------------------------------------------------
-        # RUN
-        # ----------------------------------------------------
-
-        initial_ready = algorithm_status(
-            initial_key
-        )
-
-        optimization_ready = algorithm_status(
-            optimization_key
-        )
-
-        ready = (
-            initial_ready
-            and optimization_ready
-        )
-
-        if st.button(
-            "▶️ Jalankan",
-            type="primary",
-            disabled=not ready,
-            use_container_width=True
-        ):
-
-            st.info(
-                "Algoritma akan dijalankan "
-                "setelah modul algoritmanya tersedia."
-            )
-
-
-# ============================================================
-# RESULTS
-# ============================================================
-
-with tab_results:
-
-    st.header("📊 Results")
-
-    if not st.session_state.runs:
-
-        st.info(
-            "Belum ada hasil eksperimen."
-        )
-
-    else:
-
-        results_df = pd.DataFrame(
-            st.session_state.runs
-        )
-
-        st.dataframe(
-            results_df,
-            use_container_width=True,
-            hide_index=True
-        )
-
-        st.subheader(
-            "⚖️ Method Comparison"
-        )
-
-        st.caption(
-            "Minimal dua metode dapat dibandingkan berdasarkan "
-            "final distance dan execution time."
-        )
-
-        # Grafik comparison akan aktif
-        # setelah algoritma selesai dibuat.
+            with c2:
+                fig_time = go.Figure()
+                fig_time.add_trace(go.Bar(x=comparison["Method"], y=comparison["Execution Time (ms)"]))
+                fig_time.update_layout(title="Execution Time", yaxis_title="Time (ms)", xaxis_title="Method")
+                st.plotly_chart(fig_time, use_container_width=True)
