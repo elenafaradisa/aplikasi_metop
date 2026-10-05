@@ -410,12 +410,27 @@ def resolve_initial(
 # ITERATION HISTORY (STEP BY STEP)
 # ------------------------------------------------------------
 
+NODE_KEYS = {"current_node", "selected_node", "insert_between"}
+
+DETAIL_KEYS = {"candidates", "insertion_options"}
+
+
 def _is_int(value):
 
     return (
         hasattr(value, "__index__")
         and not isinstance(value, bool)
     )
+
+
+def node_label(df, index):
+
+    return str(df.iloc[int(index)]["node"])
+
+
+def _fmt(value):
+
+    return f"{float(value):.2f}"
 
 
 def format_history_value(df, key, value):
@@ -426,6 +441,23 @@ def format_history_value(df, key, value):
 
     if hasattr(value, "tolist"):
         value = value.tolist()
+
+    if key in NODE_KEYS:
+
+        if _is_int(value) and 0 <= int(value) < len(df):
+            return node_label(df, value)
+
+        if (
+            isinstance(value, (list, tuple))
+            and value
+            and all(
+                _is_int(v) and 0 <= int(v) < len(df)
+                for v in value
+            )
+        ):
+            return " – ".join(
+                node_label(df, v) for v in value
+            )
 
     if isinstance(value, (list, tuple)):
 
@@ -449,6 +481,18 @@ def format_history_value(df, key, value):
     return str(value)
 
 
+def _is_detail_value(key, value):
+
+    return (
+        key in DETAIL_KEYS
+        or (
+            isinstance(value, (list, tuple))
+            and len(value) > 0
+            and isinstance(value[0], dict)
+        )
+    )
+
+
 def history_to_dataframe(df, history):
 
     rows = []
@@ -465,7 +509,7 @@ def history_to_dataframe(df, history):
 
             for key, value in item.items():
 
-                if key == "iteration":
+                if key == "iteration" or _is_detail_value(key, value):
                     continue
 
                 row[
@@ -489,7 +533,10 @@ def history_to_dataframe(df, history):
 
 
 def find_route_in_step(df, item):
-    """Cari rute pada satu iterasi (jika ada) untuk divisualisasikan."""
+    """
+    Cari rute pada satu iterasi (jika ada) untuk divisualisasikan.
+    Rute parsial (misal pada algoritma Constructive) juga diterima.
+    """
 
     if not isinstance(item, dict):
         return None
@@ -512,21 +559,255 @@ def find_route_in_step(df, item):
 
         if (
             isinstance(value, (list, tuple))
-            and len(value) >= len(df)
+            and len(value) >= 2
             and all(
                 _is_int(v) and 0 <= int(v) < len(df)
                 for v in value
             )
         ):
-
-            route = [int(v) for v in value]
-
-            if route[0] != route[-1]:
-                route.append(route[0])
-
-            return route
+            return [int(v) for v in value]
 
     return None
+
+
+# ------------------------------------------------------------
+# PENJELASAN PERHITUNGAN PER LANGKAH
+# ------------------------------------------------------------
+
+RULE_TEXT = {
+    "nearest": "paling dekat dengan tour saat ini",
+    "farthest": "paling jauh dari tour saat ini",
+    "random": "dipilih secara acak"
+}
+
+START_RULE_TEXT = {
+    "nearest": "terdekat dari start node",
+    "farthest": "terjauh dari start node",
+    "random": "dipilih secara acak"
+}
+
+
+def render_step_explanation(df, item):
+    """
+    Tampilkan perhitungan satu langkah (kandidat, jarak, alasan memilih).
+    Return True jika langkah ini dikenali.
+    """
+
+    step_type = item.get("step_type")
+
+    if step_type is None:
+        return False
+
+    L = lambda index: node_label(df, index)
+
+    rule = item.get("selection_rule")
+    candidates = item.get("candidates") or []
+    options = item.get("insertion_options") or []
+
+
+    # ---------------- Nearest Neighbor: langkah awal ----------------
+
+    if step_type == "initial":
+
+        st.markdown(
+            f"Mulai dari start node **{L(item['current_node'])}**."
+        )
+
+
+    # ---------------- Nearest Neighbor: pindah node ----------------
+
+    elif step_type == "move":
+
+        current = L(item["current_node"])
+        selected = L(item["selected_node"])
+
+        st.markdown(
+            f"**1. Posisi sekarang:** {current}"
+        )
+
+        if candidates:
+
+            st.markdown(
+                f"**2. Jarak dari {current} ke setiap node "
+                f"yang belum dikunjungi:**"
+            )
+
+            st.dataframe(
+                pd.DataFrame([
+                    {
+                        "Node": L(c["node"]),
+                        f"Jarak dari {current}": _fmt(c["distance"]),
+                        "Dipilih": (
+                            "✅"
+                            if c["node"] == item["selected_node"]
+                            else ""
+                        )
+                    }
+                    for c in candidates
+                ]),
+                use_container_width=True,
+                hide_index=True
+            )
+
+        st.markdown(
+            f"**3. Pilih node dengan jarak terkecil:** "
+            f"**{selected}** "
+            f"(jarak {_fmt(item['selection_distance'])})"
+        )
+
+
+    # ---------------- Nearest Neighbor: tutup tour ----------------
+
+    elif step_type == "close":
+
+        st.markdown(
+            "Semua node sudah dikunjungi, kembali ke start node: "
+            f"**{L(item['current_node'])} → {L(item['selected_node'])}** "
+            f"(jarak {_fmt(item['selection_distance'])})."
+        )
+
+
+    # ---------------- Insertion: tour awal ----------------
+
+    elif step_type == "initial_pair":
+
+        start = L(item["current_node"])
+        selected = L(item["selected_node"])
+
+        st.markdown(
+            f"**Tour awal** dibentuk dari start node **{start}** "
+            f"dan node {START_RULE_TEXT.get(rule, '')} "
+            f"**{selected}**."
+        )
+
+        if candidates:
+
+            st.dataframe(
+                pd.DataFrame([
+                    {
+                        "Node": L(c["node"]),
+                        f"Jarak dari {start}": _fmt(c["distance"]),
+                        "Dipilih": (
+                            "✅"
+                            if c["node"] == item["selected_node"]
+                            else ""
+                        )
+                    }
+                    for c in candidates
+                ]),
+                use_container_width=True,
+                hide_index=True
+            )
+
+
+    # ---------------- Insertion: sisipkan node ----------------
+
+    elif step_type == "insert":
+
+        selected = L(item["selected_node"])
+
+        st.markdown(
+            f"**1. Pilih node yang akan disisipkan:** "
+            f"**{selected}** "
+            f"({RULE_TEXT.get(rule, '')})"
+        )
+
+        if candidates:
+
+            st.dataframe(
+                pd.DataFrame([
+                    {
+                        "Node": L(c["node"]),
+                        "Jarak terdekat ke tour": _fmt(c["distance"]),
+                        "Node tour terdekat": (
+                            L(c["nearest_tour_node"])
+                            if "nearest_tour_node" in c
+                            else "-"
+                        ),
+                        "Dipilih": (
+                            "✅"
+                            if c["node"] == item["selected_node"]
+                            else ""
+                        )
+                    }
+                    for c in candidates
+                ]),
+                use_container_width=True,
+                hide_index=True
+            )
+
+        if options:
+
+            st.markdown(
+                f"**2. Cari posisi terbaik untuk {selected}** — "
+                f"tambahan jarak = "
+                f"d(i,{selected}) + d({selected},j) − d(i,j):"
+            )
+
+            best_position = None
+
+            if item.get("insert_between") is not None:
+                best_pair = tuple(item["insert_between"])
+            else:
+                best_pair = None
+
+            st.dataframe(
+                pd.DataFrame([
+                    {
+                        "Sisipkan antara": (
+                            f"{L(o['after'])} dan {L(o['before'])}"
+                        ),
+                        "Perhitungan": (
+                            f"{_fmt(o['d_after_selected'])} + "
+                            f"{_fmt(o['d_selected_before'])} − "
+                            f"{_fmt(o['d_after_before'])}"
+                        ),
+                        "Tambahan jarak": _fmt(o["increase"]),
+                        "Terbaik": (
+                            "✅"
+                            if (o["after"], o["before"]) == best_pair
+                            else ""
+                        )
+                    }
+                    for o in options
+                ]),
+                use_container_width=True,
+                hide_index=True
+            )
+
+        if item.get("insert_between") is not None:
+
+            st.markdown(
+                f"**3. Hasil:** {selected} disisipkan di antara "
+                f"**{format_history_value(df, 'insert_between', item['insert_between']).replace(' – ', ' dan ')}** "
+                f"(tambahan jarak {_fmt(item['increase'])})."
+            )
+
+    else:
+
+        return False
+
+
+    if "route" in item:
+
+        st.markdown(
+            f"**Rute sekarang:** "
+            f"`{format_history_value(df, 'route', item['route'])}`"
+        )
+
+    if "distance" in item:
+
+        note = (
+            " (sementara, sudah termasuk kembali ke start node)"
+            if step_type in ("initial", "move")
+            else ""
+        )
+
+        st.markdown(
+            f"**Jarak total:** `{_fmt(item['distance'])}`{note}"
+        )
+
+    return True
 
 
 def render_iteration_steps(df, result, index):
@@ -599,12 +880,23 @@ def render_iteration_steps(df, result, index):
 
         if isinstance(item, dict):
 
-            for key, value in item.items():
+            st.markdown(
+                f"#### Iterasi {item.get('iteration', step)}"
+            )
 
-                st.write(
-                    f"**{key.replace('_', ' ').title()}:**",
-                    format_history_value(df, key, value)
-                )
+            explained = render_step_explanation(df, item)
+
+            if not explained:
+
+                for key, value in item.items():
+
+                    if _is_detail_value(key, value):
+                        continue
+
+                    st.write(
+                        f"**{key.replace('_', ' ').title()}:**",
+                        format_history_value(df, key, value)
+                    )
 
         else:
 
@@ -1277,9 +1569,21 @@ with st.sidebar:
                         key=f"independent_initial_seed_{method}"
                     )
 
+                    random_start_label = st.selectbox(
+                        "Start Node",
+                        df["node"].tolist(),
+                        key=f"independent_random_start_{method}"
+                    )
+
+                    random_start = int(
+                        df.index[
+                            df["node"] == random_start_label
+                        ][0]
+                    )
+
                     route = generate_initial_tour(
                         len(df),
-                        home=0,
+                        home=random_start,
                         seed=int(seed)
                     )
 
