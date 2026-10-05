@@ -14,7 +14,6 @@
 # Import Library
 
 # %% colab={"base_uri": "https://localhost:8080/", "height": 384} id="AgCZkt-3rCx-" outputId="bd2e7d4e-50ce-4433-dc0a-6d7b2ae62eef"
-import pandas as pd
 import random
 
 from .base import build_distance_matrix, tour_distance
