@@ -15,13 +15,12 @@
 
 # %% colab={"base_uri": "https://localhost:8080/", "height": 384} id="AgCZkt-3rCx-" outputId="bd2e7d4e-50ce-4433-dc0a-6d7b2ae62eef"
 import random
-
 from .base import build_distance_matrix, tour_distance
+
 
 # Validasi Start Node
 
 def validate_start_node(start_node, n):
-
     if not isinstance(start_node, int):
         raise TypeError(
             "start_node harus berupa integer."
@@ -36,18 +35,24 @@ def validate_start_node(start_node, n):
 # Nearest Neighbor
 
 def nearest_neighbor(distance_matrix, start_node):
-
     n = len(distance_matrix)
 
-    validate_start_node(
-        start_node,
-        n
-    )
+    validate_start_node(start_node, n)
 
-    route = [start_node]
+    current_route = [start_node]
     visited = {start_node}
-
     current_node = start_node
+
+    history = []
+
+    # Initial state
+    history.append({
+        "iteration": 0,
+        "route": current_route.copy(),
+        "distance": 0
+    })
+
+    iteration = 0
 
     while len(visited) < n:
 
@@ -57,6 +62,8 @@ def nearest_neighbor(distance_matrix, start_node):
             if node not in visited
         ]
 
+        # Pilih node terdekat dari current node
+        # Jika jarak sama, pilih node dengan index lebih kecil
         next_node = min(
             candidates,
             key=lambda node: (
@@ -65,32 +72,54 @@ def nearest_neighbor(distance_matrix, start_node):
             )
         )
 
-        route.append(next_node)
+        current_route.append(next_node)
         visited.add(next_node)
-
         current_node = next_node
 
-    # Kembali ke start node
-    route.append(start_node)
+        iteration += 1
 
-    total_distance = tour_distance(
-        route,
+        # Hitung distance sementara dengan kembali
+        # ke start node
+        current_distance = tour_distance(
+            current_route + [start_node],
+            distance_matrix
+        )
+
+        history.append({
+            "iteration": iteration,
+            "route": current_route.copy(),
+            "distance": current_distance
+        })
+
+    # Tutup tour
+    current_route.append(start_node)
+
+    current_distance = tour_distance(
+        current_route,
         distance_matrix
     )
 
-    return route, total_distance
+    iteration += 1
+
+    history.append({
+        "iteration": iteration,
+        "route": current_route.copy(),
+        "distance": current_distance
+    })
+
+    return {
+        "route": current_route,
+        "distance": current_distance,
+        "history": history
+    }
 
 
 # Nearest Insertion
 
 def nearest_insertion(distance_matrix, start_node):
-
     n = len(distance_matrix)
 
-    validate_start_node(
-        start_node,
-        n
-    )
+    validate_start_node(start_node, n)
 
     # Pilih node terdekat dari start node
     candidates = [
@@ -108,7 +137,7 @@ def nearest_insertion(distance_matrix, start_node):
     )
 
     # Initial closed tour
-    route = [
+    current_route = [
         start_node,
         nearest_node,
         start_node
@@ -119,6 +148,22 @@ def nearest_insertion(distance_matrix, start_node):
         - {start_node, nearest_node}
     )
 
+    history = []
+
+    # Initial state
+    current_distance = tour_distance(
+        current_route,
+        distance_matrix
+    )
+
+    history.append({
+        "iteration": 0,
+        "route": current_route.copy(),
+        "distance": current_distance
+    })
+
+    iteration = 0
+
     while unvisited:
 
         # Pilih node unvisited yang paling dekat
@@ -128,7 +173,7 @@ def nearest_insertion(distance_matrix, start_node):
             key=lambda node: (
                 min(
                     distance_matrix[node][tour_node]
-                    for tour_node in route[:-1]
+                    for tour_node in current_route[:-1]
                 ),
                 node
             )
@@ -139,10 +184,10 @@ def nearest_insertion(distance_matrix, start_node):
 
         # Cari posisi insertion dengan
         # minimum tambahan jarak
-        for i in range(len(route) - 1):
+        for i in range(len(current_route) - 1):
 
-            node_i = route[i]
-            node_j = route[i + 1]
+            node_i = current_route[i]
+            node_j = current_route[i + 1]
 
             increase = (
                 distance_matrix[node_i][selected_node]
@@ -163,31 +208,39 @@ def nearest_insertion(distance_matrix, start_node):
                 best_increase = increase
                 best_position = i + 1
 
-        route.insert(
+        current_route.insert(
             best_position,
             selected_node
         )
 
         unvisited.remove(selected_node)
 
-    total_distance = tour_distance(
-        route,
-        distance_matrix
-    )
+        iteration += 1
 
-    return route, total_distance
+        current_distance = tour_distance(
+            current_route,
+            distance_matrix
+        )
+
+        history.append({
+            "iteration": iteration,
+            "route": current_route.copy(),
+            "distance": current_distance
+        })
+
+    return {
+        "route": current_route,
+        "distance": current_distance,
+        "history": history
+    }
 
 
 # Farthest Insertion
 
 def farthest_insertion(distance_matrix, start_node):
-
     n = len(distance_matrix)
 
-    validate_start_node(
-        start_node,
-        n
-    )
+    validate_start_node(start_node, n)
 
     # Pilih node terjauh dari start node
     candidates = [
@@ -205,7 +258,7 @@ def farthest_insertion(distance_matrix, start_node):
     )
 
     # Initial closed tour
-    route = [
+    current_route = [
         start_node,
         farthest_node,
         start_node
@@ -216,6 +269,22 @@ def farthest_insertion(distance_matrix, start_node):
         - {start_node, farthest_node}
     )
 
+    history = []
+
+    # Initial state
+    current_distance = tour_distance(
+        current_route,
+        distance_matrix
+    )
+
+    history.append({
+        "iteration": 0,
+        "route": current_route.copy(),
+        "distance": current_distance
+    })
+
+    iteration = 0
+
     while unvisited:
 
         # Pilih node yang paling jauh
@@ -225,7 +294,7 @@ def farthest_insertion(distance_matrix, start_node):
             key=lambda node: (
                 min(
                     distance_matrix[node][tour_node]
-                    for tour_node in route[:-1]
+                    for tour_node in current_route[:-1]
                 ),
                 -node
             )
@@ -236,10 +305,10 @@ def farthest_insertion(distance_matrix, start_node):
 
         # Cari posisi insertion dengan
         # minimum tambahan jarak
-        for i in range(len(route) - 1):
+        for i in range(len(current_route) - 1):
 
-            node_i = route[i]
-            node_j = route[i + 1]
+            node_i = current_route[i]
+            node_j = current_route[i + 1]
 
             increase = (
                 distance_matrix[node_i][selected_node]
@@ -260,32 +329,41 @@ def farthest_insertion(distance_matrix, start_node):
                 best_increase = increase
                 best_position = i + 1
 
-        route.insert(
+        current_route.insert(
             best_position,
             selected_node
         )
 
         unvisited.remove(selected_node)
 
-    total_distance = tour_distance(
-        route,
-        distance_matrix
-    )
+        iteration += 1
 
-    return route, total_distance
+        current_distance = tour_distance(
+            current_route,
+            distance_matrix
+        )
+
+        history.append({
+            "iteration": iteration,
+            "route": current_route.copy(),
+            "distance": current_distance
+        })
+
+    return {
+        "route": current_route,
+        "distance": current_distance,
+        "history": history
+    }
 
 
-# Arbitraty Insertion
-
+# =========================================================
+# Arbitrary Insertion
+# =========================================================
 
 def arbitrary_insertion(distance_matrix, start_node, seed=None):
-
     n = len(distance_matrix)
 
-    validate_start_node(
-        start_node,
-        n
-    )
+    validate_start_node(start_node, n)
 
     rng = random.Random(seed)
 
@@ -313,7 +391,6 @@ def arbitrary_insertion(distance_matrix, start_node, seed=None):
     while unvisited:
 
         # Pilih node unvisited secara acak
-        # (sorted agar hasil reproducible dengan seed)
         selected_node = rng.choice(
             sorted(unvisited)
         )
@@ -360,4 +437,3 @@ def arbitrary_insertion(distance_matrix, start_node, seed=None):
     )
 
     return route, total_distance
-
