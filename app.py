@@ -1,4 +1,3 @@
-```python
 import streamlit as st
 import pandas as pd
 import random
@@ -1462,4 +1461,3 @@ with tab_hybrid:
         "Hybrid akan dibuat setelah Independent "
         "sudah berjalan dengan baik."
     )
-```
