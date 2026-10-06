@@ -6,7 +6,8 @@ import time
 from algorithms.base import (
     build_distance_matrix,
     tour_distance,
-    generate_initial_tour
+    generate_initial_tour,
+    validate_tour
 )
 
 from algorithms.constructive import (
@@ -292,6 +293,9 @@ if "df" not in st.session_state:
 
 if "independent_results" not in st.session_state:
     st.session_state.independent_results = []
+
+if "independent_run_id" not in st.session_state:
+    st.session_state.independent_run_id = 0
 
 
 # ============================================================
@@ -810,10 +814,34 @@ def render_step_explanation(df, item):
     return True
 
 
-def render_iteration_steps(df, result, index):
-    """Expander (tertutup) berisi proses per iterasi."""
+def get_selected_iteration(index, history):
+    """Baris iterasi yang dipilih pada tabel (0-based), atau None."""
 
-    method = result["method"]
+    if not history:
+        return None
+
+    key = (
+        f"independent_table_"
+        f"{st.session_state.get('independent_run_id', 0)}_"
+        f"{index}"
+    )
+
+    state = st.session_state.get(key)
+
+    try:
+        rows = list(state["selection"]["rows"])
+    except Exception:
+        rows = []
+
+    if rows and 0 <= int(rows[0]) < len(history):
+        return int(rows[0])
+
+    return None
+
+
+def render_iteration_steps(df, result, index, selected=None):
+    """Expander (tertutup): tabel iterasi yang bisa diklik + perhitungannya."""
+
     history = result.get("history")
 
     with st.expander(
@@ -856,32 +884,40 @@ def render_iteration_steps(df, result, index):
                 )
             )
 
+        st.caption(
+            "Klik satu baris untuk melihat iterasi tersebut pada grafik "
+            "di atas. Klik lagi untuk membatalkan (grafik kembali ke "
+            "hasil akhir)."
+        )
+
         st.dataframe(
             history_to_dataframe(df, history),
             use_container_width=True,
-            hide_index=True
+            hide_index=True,
+            key=(
+                f"independent_table_"
+                f"{st.session_state.get('independent_run_id', 0)}_"
+                f"{index}"
+            ),
+            on_select="rerun",
+            selection_mode="single-row"
         )
 
-        # Detail + visualisasi satu iterasi (dipilih dengan slider)
+        if selected is None:
 
-        step = 1
-
-        if len(history) > 1:
-
-            step = st.slider(
-                "Pilih iterasi untuk dilihat detail & rutenya",
-                min_value=1,
-                max_value=len(history),
-                value=1,
-                key=f"independent_step_{index}"
+            st.info(
+                "Belum ada iterasi yang dipilih — grafik menampilkan "
+                "hasil akhir."
             )
 
-        item = history[step - 1]
+            return
+
+        item = history[selected]
 
         if isinstance(item, dict):
 
             st.markdown(
-                f"#### Iterasi {item.get('iteration', step)}"
+                f"#### Iterasi {item.get('iteration', selected + 1)}"
             )
 
             explained = render_step_explanation(df, item)
@@ -901,20 +937,6 @@ def render_iteration_steps(df, result, index):
         else:
 
             st.write(str(item))
-
-        route = find_route_in_step(df, item)
-
-        if route is not None:
-
-            st.plotly_chart(
-                plot_route(
-                    df,
-                    route,
-                    title=f"{method} — Iterasi {step}"
-                ),
-                use_container_width=True,
-                key=f"independent_step_route_{index}_{step}"
-            )
 
 
 # ============================================================
@@ -1083,6 +1105,30 @@ def execute_independent_algorithm(
     )
 
     route = extract_route(result)
+
+    if route is None:
+
+        raise ValueError(
+            "Output algoritma tidak berisi rute."
+        )
+
+    # Validasi: rute harus tertutup, memuat semua node tepat satu kali,
+    # dan dimulai dari node awal yang dipilih.
+    expected_home = (
+        start_node
+        if start_node is not None
+        else (
+            initial_route[0]
+            if initial_route is not None
+            else route[0]
+        )
+    )
+
+    validate_tour(
+        list(route),
+        len(dist_matrix),
+        home=expected_home
+    )
 
     final_distance = tour_distance(
         route,
@@ -1345,8 +1391,11 @@ with col2:
 
     st.subheader("Node Distribution")
 
+    # home=-1: tidak ada node yang ditandai merah, karena
+    # start node ditentukan per algoritma pada sidebar.
     fig_nodes = plot_nodes(
-        df
+        df,
+        home=-1
     )
 
     st.plotly_chart(
@@ -1816,6 +1865,9 @@ with tab_independent:
 
             results = []
 
+            # Reset pilihan baris tabel iterasi pada hasil sebelumnya
+            st.session_state.independent_run_id += 1
+
 
             # ------------------------------------------------
             # RUN EACH ALGORITHM INDEPENDENTLY
@@ -1964,12 +2016,68 @@ with tab_independent:
             )
 
 
-            if result["route"] is not None:
+            # ------------------------------------------------
+            # GRAFIK (satu grafik: hasil akhir / iterasi terpilih)
+            # ------------------------------------------------
+
+            history = result.get("history")
+
+            selected = get_selected_iteration(
+                i,
+                history
+            )
+
+            plot_route_data = result["route"]
+
+            plot_title = f"{method} — Final Route"
+
+            plot_caption = (
+                "Menampilkan: **hasil akhir** "
+                "(pilih baris pada tabel iterasi di bawah "
+                "untuk melihat iterasi tertentu)."
+            )
+
+            if selected is not None:
+
+                step_item = history[selected]
+
+                step_route = find_route_in_step(
+                    df,
+                    step_item
+                )
+
+                step_number = (
+                    step_item.get("iteration", selected + 1)
+                    if isinstance(step_item, dict)
+                    else selected + 1
+                )
+
+                if step_route is not None:
+
+                    plot_route_data = step_route
+
+                    plot_title = f"{method} — Iterasi {step_number}"
+
+                    plot_caption = (
+                        f"Menampilkan: **iterasi {step_number}**."
+                    )
+
+                else:
+
+                    plot_caption = (
+                        f"Iterasi {step_number} tidak menyimpan rute, "
+                        "jadi grafik menampilkan hasil akhir."
+                    )
+
+            if plot_route_data is not None:
+
+                st.caption(plot_caption)
 
                 fig = plot_route(
                     df,
-                    result["route"],
-                    title=f"{method} — Final Route"
+                    plot_route_data,
+                    home=plot_route_data[0],
+                    title=plot_title
                 )
 
                 st.plotly_chart(
@@ -1986,7 +2094,8 @@ with tab_independent:
             render_iteration_steps(
                 df,
                 result,
-                i
+                i,
+                selected
             )
 
 
