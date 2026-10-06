@@ -411,13 +411,1053 @@ def resolve_initial(
 
 
 # ------------------------------------------------------------
-# ITERATION HISTORY (STEP BY STEP)
+# DETAIL PERHITUNGAN PER ITERASI
+# (diturunkan dari history algoritma + distance matrix;
+#  tidak mengubah / memanggil ulang algoritma)
+#
+#   method_kind(nama)                                -> jenis algoritma
+#   build_iteration_table(kind, history, dist, labels) -> tabel semua iterasi
+#   build_iteration_view(kind, history, k, dist, labels) -> detail iterasi ke-k
 # ------------------------------------------------------------
 
-NODE_KEYS = {"current_node", "selected_node", "insert_between"}
+KIND_BY_METHOD = {
+    "Nearest Neighbor": "nn",
+    "Nearest Insertion": "ni",
+    "Farthest Insertion": "fi",
+    "Arbitrary Insertion": "ai",
+    "2-opt": "local",
+    "3-opt": "local",
+    "Simulated Annealing": "sa",
+    "Tabu Search": "tabu",
+}
 
-DETAIL_KEYS = {"candidates", "insertion_options"}
+INSERTION_RULE = {
+    "ni": "node dengan jarak terdekat ke tour saat ini",
+    "fi": "node dengan jarak terjauh dari tour saat ini",
+    "ai": "node dipilih secara acak",
+}
 
+START_RULE = {
+    "ni": "node terdekat dari start node",
+    "fi": "node terjauh dari start node",
+    "ai": "node dipilih secara acak",
+}
+
+
+def method_kind(method):
+    return KIND_BY_METHOD.get(method, "generic")
+
+
+# ============================================================
+# HELPER FORMAT
+# ============================================================
+
+def _f(value, digits=2):
+
+    if value is None:
+        return "-"
+
+    try:
+        return f"{float(value):.{digits}f}"
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _signed(value):
+
+    if value is None:
+        return "-"
+
+    return f"{float(value):+.2f}"
+
+
+def _route_of(item):
+
+    if not isinstance(item, dict):
+        return None
+
+    for key in ("route", "tour", "route_after", "best_route", "best_tour"):
+
+        value = item.get(key)
+
+        if hasattr(value, "tolist"):
+            value = value.tolist()
+
+        if isinstance(value, (list, tuple)) and len(value) >= 1:
+            return [int(v) for v in value]
+
+    return None
+
+
+def route_text(route, labels):
+
+    if route is None:
+        return "-"
+
+    return " → ".join(labels[int(i)] for i in route)
+
+
+def _edge(a, b, labels):
+
+    return f"{labels[a]}–{labels[b]}"
+
+
+def _edges(edges, labels):
+
+    return ", ".join(_edge(a, b, labels) for a, b in edges)
+
+
+def two_opt_move(route, i, j):
+    """
+    Move 2-opt (reverse segmen i..j).
+    Return: (edge dibuang, edge ditambah, rute baru)
+    """
+
+    removed = [
+        (route[i - 1], route[i]),
+        (route[j], route[j + 1]),
+    ]
+
+    added = [
+        (route[i - 1], route[j]),
+        (route[i], route[j + 1]),
+    ]
+
+    new_route = route[:i] + route[i:j + 1][::-1] + route[j + 1:]
+
+    return removed, added, new_route
+
+
+def attr_text(attr, labels):
+    """Atribut tabu (frozenset berisi edge) -> teks 'A–B, C–D'."""
+
+    try:
+        edges = sorted(tuple(sorted(edge)) for edge in attr)
+        return ", ".join(_edge(a, b, labels) for a, b in edges)
+    except Exception:
+        return str(attr)
+
+
+def _attr_of_move(route, i, j):
+
+    removed, _, _ = two_opt_move(route, i, j)
+
+    return frozenset(frozenset(edge) for edge in removed)
+
+
+# Blok tampilan -------------------------------------------------
+
+def _lines(heading, pairs):
+    return {"kind": "lines", "heading": heading, "lines": pairs}
+
+
+def _table(heading, df, caption=None):
+    return {"kind": "table", "heading": heading, "df": df, "caption": caption}
+
+
+def _text(text):
+    return {"kind": "text", "text": text}
+
+
+def _summary(k, history, labels, distance_note=""):
+
+    item = history[k]
+
+    return [
+        ("Iteration", str(item.get("iteration", k))),
+        ("Route", route_text(_route_of(item), labels)),
+        ("Distance", _f(item.get("distance")) + distance_note),
+    ]
+
+
+def _before_after(k, history):
+
+    before = history[k - 1].get("distance")
+    after = history[k].get("distance")
+
+    delta = (
+        None
+        if before is None or after is None
+        else after - before
+    )
+
+    return [
+        ("Distance sebelum", _f(before)),
+        ("Distance sesudah", _f(after)),
+        ("Δ Distance", _signed(delta)),
+    ]
+
+
+# ============================================================
+# CONSTRUCTIVE (NN, NI, FI, AI)
+# ============================================================
+
+def _derive_nn(history, k, dist):
+
+    n = len(dist)
+    cur = _route_of(history[k])
+
+    if k == 0:
+        return {"type": "initial", "start": cur[0]}
+
+    prev = _route_of(history[k - 1])
+
+    # semua node sudah dikunjungi -> tutup tour
+    if len(prev) == n and len(cur) == n + 1 and cur[-1] == cur[0]:
+
+        return {
+            "type": "close",
+            "current": prev[-1],
+            "selected": cur[-1],
+            "distance": dist[prev[-1]][cur[-1]],
+        }
+
+    current = prev[-1]
+    selected = cur[-1]
+
+    candidates = [
+        {"node": v, "distance": dist[current][v]}
+        for v in range(n)
+        if v not in prev
+    ]
+
+    return {
+        "type": "move",
+        "current": current,
+        "selected": selected,
+        "distance": dist[current][selected],
+        "candidates": candidates,
+    }
+
+
+def _derive_insertion(kind, history, k, dist):
+
+    n = len(dist)
+    cur = _route_of(history[k])
+
+    if k == 0:
+
+        start, second = cur[0], cur[1]
+
+        candidates = (
+            []
+            if kind == "ai"
+            else [
+                {"node": v, "distance": dist[start][v]}
+                for v in range(n)
+                if v != start
+            ]
+        )
+
+        return {
+            "type": "initial_pair",
+            "start": start,
+            "selected": second,
+            "candidates": candidates,
+        }
+
+    prev = _route_of(history[k - 1])
+    prev_nodes = set(prev)
+
+    selected = next(v for v in cur[:-1] if v not in prev_nodes)
+
+    position = cur.index(selected)
+    after, before = cur[position - 1], cur[position + 1]
+
+    options = []
+
+    for i in range(len(prev) - 1):
+
+        a, b = prev[i], prev[i + 1]
+
+        d_as = dist[a][selected]
+        d_sb = dist[selected][b]
+        d_ab = dist[a][b]
+
+        options.append({
+            "after": a,
+            "before": b,
+            "d_as": d_as,
+            "d_sb": d_sb,
+            "d_ab": d_ab,
+            "increase": d_as + d_sb - d_ab,
+            "chosen": (a == after and b == before),
+        })
+
+    candidates = []
+
+    if kind != "ai":
+
+        tour_nodes = prev[:-1]
+
+        for v in range(n):
+
+            if v in prev_nodes:
+                continue
+
+            nearest = min(tour_nodes, key=lambda t: (dist[v][t], t))
+
+            candidates.append({
+                "node": v,
+                "distance": dist[v][nearest],
+                "nearest_tour_node": nearest,
+            })
+
+    chosen = next(o for o in options if o["chosen"])
+
+    return {
+        "type": "insert",
+        "selected": selected,
+        "after": after,
+        "before": before,
+        "increase": chosen["increase"],
+        "options": options,
+        "candidates": candidates,
+    }
+
+
+def _constructive_view(kind, history, k, dist, labels):
+
+    L = labels
+
+    if kind == "nn":
+        d = _derive_nn(history, k, dist)
+    else:
+        d = _derive_insertion(kind, history, k, dist)
+
+    blocks = []
+
+    # ---------------- NN ----------------
+
+    if d["type"] == "initial":
+
+        blocks.append(_text(
+            f"Mulai dari start node **{L[d['start']]}**. "
+            "Belum ada jarak yang dihitung."
+        ))
+
+        return {
+            "summary": _summary(k, history, L),
+            "blocks": blocks,
+        }
+
+    if d["type"] == "close":
+
+        pairs = [
+            ("Posisi sekarang", L[d["current"]]),
+            ("Kembali ke start node", L[d["selected"]]),
+            (
+                "Perhitungan",
+                f"d({L[d['current']]}, {L[d['selected']]}) = "
+                f"{_f(d['distance'])}",
+            ),
+        ] + _before_after(k, history)
+
+        blocks.append(_lines("Perhitungan / keputusan", pairs))
+
+        return {
+            "summary": _summary(k, history, L),
+            "blocks": blocks,
+        }
+
+    if d["type"] == "move":
+
+        m = len(d["candidates"])
+
+        pairs = [
+            ("Posisi sekarang", L[d["current"]]),
+            ("Node yang dipilih", L[d["selected"]]),
+            (
+                "Alasan",
+                f"d({L[d['current']]}, {L[d['selected']]}) = "
+                f"{_f(d['distance'])} adalah yang terkecil "
+                f"dari {m} kandidat (jika sama, pilih node berindeks lebih kecil)",
+            ),
+        ] + _before_after(k, history)
+
+        blocks.append(_lines("Perhitungan / keputusan", pairs))
+
+        rows = [
+            {
+                "Node": L[c["node"]],
+                f"Jarak dari {L[d['current']]}": _f(c["distance"]),
+                "Dipilih": "✅" if c["node"] == d["selected"] else "",
+                "_sort": c["distance"],
+            }
+            for c in d["candidates"]
+        ]
+
+        df = (
+            pd.DataFrame(rows)
+            .sort_values("_sort", kind="stable")
+            .drop(columns="_sort")
+        )
+
+        blocks.append(_table(
+            f"Kandidat: jarak dari {L[d['current']]} ke setiap node "
+            "yang belum dikunjungi",
+            df,
+            "Diurutkan dari jarak terkecil.",
+        ))
+
+        return {
+            "summary": _summary(
+                k, history, L,
+                " (sementara, sudah termasuk kembali ke start node)"
+            ),
+            "blocks": blocks,
+        }
+
+    # ---------------- Insertion ----------------
+
+    if d["type"] == "initial_pair":
+
+        pairs = [
+            ("Start node", L[d["start"]]),
+            ("Node kedua", f"{L[d['selected']]} ({START_RULE[kind]})"),
+            (
+                "Tour awal",
+                f"{L[d['start']]} → {L[d['selected']]} → {L[d['start']]}",
+            ),
+            (
+                "Distance",
+                f"2 × d({L[d['start']]}, {L[d['selected']]}) = "
+                f"{_f(history[k].get('distance'))}",
+            ),
+        ]
+
+        blocks.append(_lines("Perhitungan / keputusan", pairs))
+
+        if d["candidates"]:
+
+            rows = [
+                {
+                    "Node": L[c["node"]],
+                    f"Jarak dari {L[d['start']]}": _f(c["distance"]),
+                    "Dipilih": "✅" if c["node"] == d["selected"] else "",
+                    "_sort": c["distance"],
+                }
+                for c in d["candidates"]
+            ]
+
+            df = (
+                pd.DataFrame(rows)
+                .sort_values("_sort", kind="stable")
+                .drop(columns="_sort")
+            )
+
+            blocks.append(_table(
+                f"Kandidat node kedua (jarak dari {L[d['start']]})",
+                df,
+            ))
+
+        return {
+            "summary": _summary(k, history, L),
+            "blocks": blocks,
+        }
+
+    # type == insert
+
+    s = L[d["selected"]]
+    a, b = L[d["after"]], L[d["before"]]
+
+    pairs = [
+        ("Node yang dipilih", f"{s} ({INSERTION_RULE[kind]})"),
+        ("Disisipkan setelah", a),
+        ("Disisipkan antara", f"{a} dan {b}"),
+        (
+            "Tambahan jarak",
+            f"d({a},{s}) + d({s},{b}) − d({a},{b}) = "
+            f"{_f(dist[d['after']][d['selected']])} + "
+            f"{_f(dist[d['selected']][d['before']])} − "
+            f"{_f(dist[d['after']][d['before']])} = "
+            f"{_f(d['increase'])}",
+        ),
+    ] + _before_after(k, history)
+
+    blocks.append(_lines("Perhitungan / keputusan", pairs))
+
+    if d["candidates"]:
+
+        rows = [
+            {
+                "Node": L[c["node"]],
+                "Jarak ke tour (terdekat)": _f(c["distance"]),
+                "Node tour terdekat": L[c["nearest_tour_node"]],
+                "Dipilih": "✅" if c["node"] == d["selected"] else "",
+                "_sort": c["distance"],
+            }
+            for c in d["candidates"]
+        ]
+
+        df = pd.DataFrame(rows).sort_values(
+            "_sort",
+            ascending=(kind == "ni"),
+            kind="stable",
+        ).drop(columns="_sort")
+
+        blocks.append(_table(
+            "Langkah 1 — memilih node yang akan disisipkan",
+            df,
+            (
+                "Nearest Insertion memilih jarak terkecil ke tour."
+                if kind == "ni"
+                else "Farthest Insertion memilih jarak terbesar ke tour."
+            ),
+        ))
+
+    elif kind == "ai":
+
+        blocks.append(_text(
+            f"**Langkah 1 — memilih node:** node **{s}** dipilih secara "
+            "acak dari node yang belum masuk tour (hasilnya tetap sama "
+            "selama seed sama)."
+        ))
+
+    rows = [
+        {
+            "Disisipkan antara": f"{L[o['after']]} dan {L[o['before']]}",
+            "Perhitungan": (
+                f"{_f(o['d_as'])} + {_f(o['d_sb'])} − {_f(o['d_ab'])}"
+            ),
+            "Tambahan jarak": _f(o["increase"]),
+            "Terbaik": "✅" if o["chosen"] else "",
+        }
+        for o in d["options"]
+    ]
+
+    blocks.append(_table(
+        f"Langkah 2 — mencari posisi terbaik untuk {s}",
+        pd.DataFrame(rows),
+        f"Tambahan jarak = d(i,{s}) + d({s},j) − d(i,j); "
+        "dipilih yang tambahannya paling kecil.",
+    ))
+
+    return {
+        "summary": _summary(k, history, L),
+        "blocks": blocks,
+    }
+
+
+# ============================================================
+# TABU SEARCH
+# ============================================================
+
+def _tabu_list_table(tabu_list, labels, k, new_attr=None):
+
+    rows = []
+
+    for attr, expiry in (tabu_list or {}).items():
+
+        rows.append({
+            "Edge yang dilarang dibuang kembali": attr_text(attr, labels),
+            "Tabu sampai iterasi": int(expiry),
+            "Status": (
+                "baru ditambahkan" if (new_attr is not None and attr == new_attr)
+                else ("aktif" if expiry >= k else "kadaluarsa")
+            ),
+        })
+
+    return pd.DataFrame(rows)
+
+
+def _tabu_view(history, k, dist, labels):
+
+    L = labels
+
+    if k == 0:
+
+        return {
+            "summary": _summary(k, history, L),
+            "blocks": [_text(
+                "Iterasi 0 adalah solusi awal. Tabu list masih kosong, "
+                f"dan aspiration level awal = {_f(history[0].get('distance'))}."
+            )],
+        }
+
+    prev, cur = history[k - 1], history[k]
+
+    route_before = _route_of(prev)
+    distance_before = prev.get("distance")
+
+    best_before = min(h.get("distance") for h in history[:k])
+    best_after = min(h.get("distance") for h in history[:k + 1])
+
+    move = cur.get("move") or {}
+    mi, mj = move.get("i"), move.get("j")
+
+    blocks = []
+
+    # --- kondisi awal iterasi
+    blocks.append(_lines("Kondisi awal iterasi", [
+        ("Current Route", route_text(route_before, L)),
+        ("Current Distance", _f(distance_before)),
+        (
+            "Aspiration level (jarak terbaik sejauh ini)",
+            _f(best_before),
+        ),
+    ]))
+
+    # --- tabu list sebelum
+    tl_before = prev.get("tabu_list") or {}
+
+    active = {a: e for a, e in tl_before.items() if e >= k}
+
+    if active:
+
+        blocks.append(_table(
+            "Tabu List (aktif pada iterasi ini)",
+            _tabu_list_table(active, L, k),
+            "Move yang membuang edge ini dilarang, kecuali memenuhi "
+            "aspiration criterion (jarak < aspiration level).",
+        ))
+
+    else:
+
+        blocks.append(_text("**Tabu List:** kosong (belum ada move yang dilarang)."))
+
+    # --- semua kandidat
+    candidates = cur.get("candidates") or []
+
+    if candidates:
+
+        rows = []
+
+        for c in candidates:
+
+            removed, added, new_route = two_opt_move(route_before, c["i"], c["j"])
+
+            rows.append({
+                "Move (i, j)": f"({c['i']}, {c['j']})",
+                "Edge dibuang": _edges(removed, L),
+                "Edge ditambah": _edges(added, L),
+                "New Route": route_text(new_route, L),
+                "New Distance": _f(c["distance"]),
+                "Δ": _signed(c["distance"] - distance_before),
+                "Tabu?": "Ya" if c.get("is_tabu") else "Tidak",
+                "Aspirasi?": "Ya" if c.get("aspiration_met") else "Tidak",
+                "Boleh dipilih?": "Ya" if c.get("admissible") else "Tidak",
+                "Dipilih": "✅" if (c["i"] == mi and c["j"] == mj) else "",
+                "_sort": c["distance"],
+            })
+
+        df = (
+            pd.DataFrame(rows)
+            .sort_values("_sort", kind="stable")
+            .drop(columns="_sort")
+        )
+
+        blocks.append(_table(
+            f"Candidate Moves ({len(candidates)} kandidat 2-opt dievaluasi)",
+            df,
+            "Diurutkan dari New Distance terkecil. Move dipilih dari "
+            "kandidat 'Boleh dipilih' dengan jarak terkecil.",
+        ))
+
+    else:
+
+        blocks.append(_text(
+            "_Daftar kandidat tidak tersedia pada run ini "
+            "(verbose_history aktif hanya untuk dataset kecil)._"
+        ))
+
+    # --- move terpilih
+    if mi is not None:
+
+        removed, added, _ = two_opt_move(route_before, mi, mj)
+
+        chosen = next(
+            (c for c in candidates if c["i"] == mi and c["j"] == mj),
+            None,
+        )
+
+        if chosen is None:
+            reason = "-"
+        elif chosen.get("admissible") and chosen.get("is_tabu"):
+            reason = (
+                "move ini tabu, tetapi memenuhi aspiration criterion "
+                "(lebih baik dari aspiration level), jadi tetap boleh dipilih"
+            )
+        elif chosen.get("admissible"):
+            reason = (
+                "kandidat tidak tabu dengan New Distance terkecil "
+                "(boleh lebih buruk dari Current Distance)"
+            )
+        else:
+            reason = (
+                "semua kandidat tabu dan tidak ada yang memenuhi aspirasi, "
+                "sehingga dipilih kandidat dengan jarak terkecil (fallback)"
+            )
+
+        blocks.append(_lines("Selected Move", [
+            ("Move (i, j)", f"({mi}, {mj})"),
+            ("Edge dibuang", _edges(removed, L)),
+            ("Edge ditambah", _edges(added, L)),
+            ("Alasan", reason),
+            ("New Route", route_text(_route_of(cur), L)),
+            ("New Distance", _f(cur.get("distance"))),
+            ("Δ Distance", _signed(cur.get("distance") - distance_before)),
+            (
+                "Best so far",
+                f"{_f(best_before)} → {_f(best_after)}"
+                + ("  (rekor baru!)" if best_after < best_before else ""),
+            ),
+        ]))
+
+        new_attr = _attr_of_move(route_before, mi, mj)
+
+        blocks.append(_table(
+            "Tabu List sesudah iterasi",
+            _tabu_list_table(cur.get("tabu_list"), L, k + 1, new_attr),
+            "Move yang baru dipilih masuk tabu list selama tabu tenure.",
+        ))
+
+    return {
+        "summary": _summary(k, history, L),
+        "blocks": blocks,
+    }
+
+
+# ============================================================
+# SIMULATED ANNEALING
+# ============================================================
+
+def _sa_view(history, k, dist, labels):
+
+    L = labels
+
+    item = history[k]
+
+    if k == 0:
+
+        return {
+            "summary": _summary(k, history, L),
+            "blocks": [_text(
+                "Iterasi 0 adalah solusi awal "
+                f"dengan suhu awal {_f(item.get('temperature'))}."
+            )],
+        }
+
+    prev = history[k - 1]
+
+    route_before = _route_of(prev)
+    distance_before = prev.get("distance")
+
+    move = item.get("move") or {}
+
+    blocks = []
+
+    pairs = [
+        ("Suhu (T)", _f(item.get("temperature"), 4)),
+        ("Current Route", route_text(route_before, L)),
+        ("Current Distance", _f(distance_before)),
+    ]
+
+    if move:
+
+        removed, added, new_route = two_opt_move(
+            route_before, move["i"], move["j"]
+        )
+
+        candidate_distance = distance_before + item["delta"]
+
+        pairs += [
+            ("Candidate move (dipilih acak)", f"({move['i']}, {move['j']})"),
+            ("Edge dibuang", _edges(removed, L)),
+            ("Edge ditambah", _edges(added, L)),
+            ("Candidate Route", route_text(new_route, L)),
+            ("Candidate Distance", _f(candidate_distance)),
+            ("Δ = Candidate − Current", _signed(item["delta"])),
+        ]
+
+        if item["delta"] < 0:
+            pairs.append((
+                "Probabilitas diterima",
+                "1.0000 (lebih baik, pasti diterima)",
+            ))
+        else:
+            pairs.append((
+                "Probabilitas diterima",
+                f"exp(−Δ/T) = exp(−{_f(item['delta'])}/"
+                f"{_f(item.get('temperature'), 4)}) = "
+                f"{_f(item.get('probability'), 4)}",
+            ))
+
+    pairs += [
+        (
+            "Keputusan",
+            "DITERIMA" if item.get("accepted") else "DITOLAK (rute tetap)",
+        ),
+        ("New Route", route_text(_route_of(item), L)),
+        ("New Distance", _f(item.get("distance"))),
+        ("Best distance sejauh ini", _f(item.get("best_distance"))),
+    ]
+
+    blocks.append(_lines("Perhitungan / keputusan", pairs))
+
+    return {
+        "summary": _summary(k, history, L),
+        "blocks": blocks,
+    }
+
+
+# ============================================================
+# GENERIC (2-opt / 3-opt / lainnya)
+# ============================================================
+
+def _generic_view(history, k, labels):
+
+    item = history[k]
+
+    pairs = []
+
+    for key, value in item.items():
+
+        if key == "iteration":
+            continue
+
+        if key in ("route", "tour"):
+            continue
+
+        if isinstance(value, (list, dict)) and not value:
+            continue
+
+        if isinstance(value, float):
+            value = _f(value)
+
+        pairs.append((key.replace("_", " ").title(), str(value)))
+
+    blocks = [_lines("Informasi iterasi", pairs)] if pairs else []
+
+    return {
+        "summary": _summary(k, history, labels),
+        "blocks": blocks,
+    }
+
+
+# ============================================================
+# PUBLIC: DETAIL SATU ITERASI
+# ============================================================
+
+def build_iteration_view(kind, history, k, dist, labels):
+    """
+    Detail perhitungan iterasi ke-k.
+
+    Return dict:
+        {
+            "summary": [(label, nilai), ...],
+            "blocks":  [ {"kind": "lines" | "table" | "text", ...}, ... ]
+        }
+    """
+
+    item = history[k]
+
+    if not isinstance(item, dict):
+
+        return {
+            "summary": [("Iteration", str(k)), ("Info", str(item))],
+            "blocks": [],
+        }
+
+    try:
+
+        if kind in ("nn", "ni", "fi", "ai") and _route_of(item) is not None:
+            return _constructive_view(kind, history, k, dist, labels)
+
+        if kind == "tabu":
+            return _tabu_view(history, k, dist, labels)
+
+        if kind == "sa":
+            return _sa_view(history, k, dist, labels)
+
+    except Exception as error:   # jangan sampai UI gagal total
+
+        return {
+            "summary": _summary(k, history, labels)
+            if _route_of(item) is not None
+            else [("Iteration", str(k))],
+            "blocks": [_text(
+                f"_Detail perhitungan tidak dapat diturunkan: {error}_"
+            )],
+        }
+
+    return _generic_view(history, k, labels)
+
+
+# ============================================================
+# PUBLIC: TABEL KUMPULAN ITERASI
+# ============================================================
+
+def build_iteration_table(kind, history, dist, labels):
+    """Tabel ringkas semua iterasi (satu baris per iterasi)."""
+
+    rows = []
+
+    best = None
+
+    for k, item in enumerate(history):
+
+        if not isinstance(item, dict):
+            rows.append({"Iterasi": str(k), "Info": str(item)})
+            continue
+
+        route = _route_of(item)
+
+        row = {"Iterasi": str(item.get("iteration", k))}
+
+        if route is not None:
+            row["Route"] = route_text(route, labels)
+
+        distance = item.get("distance")
+
+        row["Distance"] = _f(distance)
+
+        if distance is not None:
+            best = distance if best is None else min(best, distance)
+
+        try:
+
+            if kind == "nn" and k > 0:
+
+                d = _derive_nn(history, k, dist)
+
+                row["Node dipilih"] = labels[d["selected"]]
+
+            elif kind in ("ni", "fi", "ai"):
+
+                d = _derive_insertion(kind, history, k, dist)
+
+                if d["type"] == "initial_pair":
+
+                    row["Node dipilih"] = labels[d["selected"]]
+
+                else:
+
+                    row["Node dipilih"] = labels[d["selected"]]
+                    row["Disisipkan antara"] = (
+                        f"{labels[d['after']]} dan {labels[d['before']]}"
+                    )
+                    row["Tambahan jarak"] = _f(d["increase"])
+
+            elif kind == "tabu":
+
+                row["Best so far"] = _f(best)
+
+                if k > 0:
+
+                    mv = item.get("move") or {}
+
+                    removed, added, _ = two_opt_move(
+                        _route_of(history[k - 1]), mv["i"], mv["j"]
+                    )
+
+                    row["Move"] = (
+                        f"{_edges(removed, labels)} → {_edges(added, labels)}"
+                    )
+
+                    row["Δ"] = _signed(
+                        distance - history[k - 1].get("distance")
+                    )
+
+                    row["Ukuran tabu list"] = str(
+                        len(item.get("tabu_list") or {})
+                    )
+
+            elif kind == "sa":
+
+                row["Best so far"] = _f(item.get("best_distance"))
+
+                if k > 0:
+
+                    mv = item.get("move") or {}
+
+                    removed, added, _ = two_opt_move(
+                        _route_of(history[k - 1]), mv["i"], mv["j"]
+                    )
+
+                    row["Move"] = (
+                        f"{_edges(removed, labels)} → {_edges(added, labels)}"
+                    )
+
+                    row["Δ"] = _signed(item.get("delta"))
+                    row["Probabilitas"] = _f(item.get("probability"), 4)
+                    row["Diterima"] = "Ya" if item.get("accepted") else "Tidak"
+                    row["Suhu"] = _f(item.get("temperature"))
+
+        except Exception:
+            pass
+
+        rows.append(row)
+
+    return pd.DataFrame(rows).fillna("-")
+
+
+# ------------------------------------------------------------
+# PENJELASAN SINGKAT ALGORITMA
+# ------------------------------------------------------------
+
+ALGORITHM_EXPLANATIONS = {
+
+    "Nearest Neighbor":
+        "Nearest Neighbor membangun rute dari start node, lalu selalu "
+        "berpindah ke node terdekat yang belum dikunjungi sampai semua "
+        "node terkunjungi, kemudian kembali ke start node. Cepat dan "
+        "sederhana, tetapi sifatnya greedy sehingga rute di akhir "
+        "sering menjadi panjang.",
+
+    "Nearest Insertion":
+        "Nearest Insertion memulai tour kecil (start node dan node "
+        "terdekatnya). Tiap iterasi, node di luar tour yang paling dekat "
+        "dengan tour dipilih, lalu disisipkan pada posisi yang menambah "
+        "jarak paling kecil.",
+
+    "Farthest Insertion":
+        "Farthest Insertion mirip Nearest Insertion, tetapi node yang "
+        "dipilih adalah yang paling jauh dari tour. Dengan begitu "
+        "kerangka rute terbentuk lebih awal, lalu node lain disisipkan "
+        "pada posisi dengan tambahan jarak minimum.",
+
+    "Arbitrary Insertion":
+        "Arbitrary Insertion memilih node yang akan disisipkan secara "
+        "acak (dikontrol seed), lalu menyisipkannya pada posisi dengan "
+        "tambahan jarak paling kecil. Hasilnya bergantung pada seed.",
+
+    "2-opt":
+        "2-opt memperbaiki rute awal dengan menghapus dua edge lalu "
+        "menyambungnya kembali (membalik segmen di antaranya) bila total "
+        "jarak menjadi lebih pendek. Diulang sampai tidak ada perbaikan "
+        "atau iterasi maksimum tercapai.",
+
+    "3-opt":
+        "3-opt memperbaiki rute awal dengan menghapus tiga edge dan "
+        "menyambungnya kembali dengan kombinasi terbaik. Pencariannya "
+        "lebih luas dari 2-opt, tetapi lebih lambat.",
+
+    "Simulated Annealing":
+        "Simulated Annealing memilih satu move acak pada tiap iterasi. "
+        "Move yang lebih baik selalu diterima, sedangkan yang lebih buruk "
+        "diterima dengan peluang exp(−Δ/T). Suhu T diturunkan bertahap "
+        "sehingga algoritma makin selektif dan bisa keluar dari optimum "
+        "lokal.",
+
+    "Tabu Search":
+        "Tabu Search mengevaluasi seluruh kandidat move 2-opt pada tiap "
+        "iterasi, lalu memilih yang terbaik di antara yang tidak tabu "
+        "(walau lebih buruk dari rute sekarang). Move yang baru dipakai "
+        "masuk tabu list selama tabu tenure agar tidak berputar balik; "
+        "move tabu tetap boleh dipilih bila lebih baik dari rute terbaik "
+        "(aspiration criterion).",
+}
+
+
+# Detail kandidat (verbose_history) hanya dipaksa aktif untuk dataset
+# kecil-menengah agar history tidak membengkak.
+DETAIL_NODE_LIMIT = 100
+
+
+# ------------------------------------------------------------
+# HISTORY
+# ------------------------------------------------------------
 
 def _is_int(value):
 
@@ -427,120 +1467,31 @@ def _is_int(value):
     )
 
 
-def node_label(df, index):
+def normalize_history(history):
+    """
+    Samakan bentuk history: list of dict.
+    Jika algoritma hanya mengembalikan list angka (mis. 2-opt / 3-opt),
+    ubah menjadi [{"iteration": i, "distance": nilai}, ...].
+    """
 
-    return str(df.iloc[int(index)]["node"])
+    if not history:
+        return history
 
+    if all(
+        isinstance(h, (int, float)) and not isinstance(h, bool)
+        for h in history
+    ):
 
-def _fmt(value):
+        return [
+            {"iteration": i, "distance": float(h)}
+            for i, h in enumerate(history)
+        ]
 
-    return f"{float(value):.2f}"
-
-
-def format_history_value(df, key, value):
-    """Ubah nilai history menjadi teks yang mudah dibaca."""
-
-    if isinstance(value, float):
-        return f"{value:.2f}"
-
-    if hasattr(value, "tolist"):
-        value = value.tolist()
-
-    if key in NODE_KEYS:
-
-        if _is_int(value) and 0 <= int(value) < len(df):
-            return node_label(df, value)
-
-        if (
-            isinstance(value, (list, tuple))
-            and value
-            and all(
-                _is_int(v) and 0 <= int(v) < len(df)
-                for v in value
-            )
-        ):
-            return " – ".join(
-                node_label(df, v) for v in value
-            )
-
-    if isinstance(value, (list, tuple)):
-
-        is_route = (
-            any(
-                word in key.lower()
-                for word in ("route", "tour")
-            )
-            and len(value) > 0
-            and all(
-                _is_int(v) and 0 <= int(v) < len(df)
-                for v in value
-            )
-        )
-
-        if is_route:
-            return route_to_labels(df, value)
-
-        return str(list(value))
-
-    return str(value)
-
-
-def _is_detail_value(key, value):
-
-    return (
-        key in DETAIL_KEYS
-        or (
-            isinstance(value, (list, tuple))
-            and len(value) > 0
-            and isinstance(value[0], dict)
-        )
-    )
-
-
-def history_to_dataframe(df, history):
-
-    rows = []
-
-    for i, item in enumerate(history, start=1):
-
-        if isinstance(item, dict):
-
-            row = {
-                "Iterasi": str(
-                    item.get("iteration", i)
-                )
-            }
-
-            for key, value in item.items():
-
-                if key == "iteration" or _is_detail_value(key, value):
-                    continue
-
-                row[
-                    key.replace("_", " ").title()
-                ] = format_history_value(
-                    df,
-                    key,
-                    value
-                )
-
-        else:
-
-            row = {
-                "Iterasi": str(i),
-                "Info": str(item)
-            }
-
-        rows.append(row)
-
-    return pd.DataFrame(rows).fillna("-")
+    return history
 
 
 def find_route_in_step(df, item):
-    """
-    Cari rute pada satu iterasi (jika ada) untuk divisualisasikan.
-    Rute parsial (misal pada algoritma Constructive) juga diterima.
-    """
+    """Cari rute pada satu iterasi (rute parsial juga diterima)."""
 
     if not isinstance(item, dict):
         return None
@@ -574,369 +1525,311 @@ def find_route_in_step(df, item):
     return None
 
 
-# ------------------------------------------------------------
-# PENJELASAN PERHITUNGAN PER LANGKAH
-# ------------------------------------------------------------
+def render_view(view):
+    """Tampilkan hasil build_iteration_view()."""
 
-RULE_TEXT = {
-    "nearest": "paling dekat dengan tour saat ini",
-    "farthest": "paling jauh dari tour saat ini",
-    "random": "dipilih secara acak"
-}
+    st.markdown(
+        "#### Detail Iterasi"
+    )
 
-START_RULE_TEXT = {
-    "nearest": "terdekat dari start node",
-    "farthest": "terjauh dari start node",
-    "random": "dipilih secara acak"
-}
-
-
-def render_step_explanation(df, item):
-    """
-    Tampilkan perhitungan satu langkah (kandidat, jarak, alasan memilih).
-    Return True jika langkah ini dikenali.
-    """
-
-    step_type = item.get("step_type")
-
-    if step_type is None:
-        return False
-
-    L = lambda index: node_label(df, index)
-
-    rule = item.get("selection_rule")
-    candidates = item.get("candidates") or []
-    options = item.get("insertion_options") or []
-
-
-    # ---------------- Nearest Neighbor: langkah awal ----------------
-
-    if step_type == "initial":
-
-        st.markdown(
-            f"Mulai dari start node **{L(item['current_node'])}**."
+    st.markdown(
+        "  \n".join(
+            f"**{label}** : {value}"
+            for label, value in view["summary"]
         )
+    )
 
+    for block in view["blocks"]:
 
-    # ---------------- Nearest Neighbor: pindah node ----------------
+        if block["kind"] == "text":
 
-    elif step_type == "move":
+            st.markdown(block["text"])
 
-        current = L(item["current_node"])
-        selected = L(item["selected_node"])
+        elif block["kind"] == "lines":
 
-        st.markdown(
-            f"**1. Posisi sekarang:** {current}"
-        )
-
-        if candidates:
+            st.markdown(f"##### {block['heading']}")
 
             st.markdown(
-                f"**2. Jarak dari {current} ke setiap node "
-                f"yang belum dikunjungi:**"
+                "  \n".join(
+                    f"**{label}** : {value}"
+                    for label, value in block["lines"]
+                )
             )
 
-            st.dataframe(
-                pd.DataFrame([
-                    {
-                        "Node": L(c["node"]),
-                        f"Jarak dari {current}": _fmt(c["distance"]),
-                        "Dipilih": (
-                            "✅"
-                            if c["node"] == item["selected_node"]
-                            else ""
-                        )
-                    }
-                    for c in candidates
-                ]),
-                use_container_width=True,
-                hide_index=True
-            )
+        elif block["kind"] == "table":
 
-        st.markdown(
-            f"**3. Pilih node dengan jarak terkecil:** "
-            f"**{selected}** "
-            f"(jarak {_fmt(item['selection_distance'])})"
-        )
+            st.markdown(f"##### {block['heading']}")
 
+            if block.get("caption"):
+                st.caption(block["caption"])
 
-    # ---------------- Nearest Neighbor: tutup tour ----------------
+            table = block["df"]
 
-    elif step_type == "close":
+            if table is not None and len(table) > 0:
 
-        st.markdown(
-            "Semua node sudah dikunjungi, kembali ke start node: "
-            f"**{L(item['current_node'])} → {L(item['selected_node'])}** "
-            f"(jarak {_fmt(item['selection_distance'])})."
-        )
+                st.dataframe(
+                    table,
+                    use_container_width=True,
+                    hide_index=True,
+                    height=min(38 * (len(table) + 1) + 3, 420)
+                )
 
-
-    # ---------------- Insertion: tour awal ----------------
-
-    elif step_type == "initial_pair":
-
-        start = L(item["current_node"])
-        selected = L(item["selected_node"])
-
-        st.markdown(
-            f"**Tour awal** dibentuk dari start node **{start}** "
-            f"dan node {START_RULE_TEXT.get(rule, '')} "
-            f"**{selected}**."
-        )
-
-        if candidates:
-
-            st.dataframe(
-                pd.DataFrame([
-                    {
-                        "Node": L(c["node"]),
-                        f"Jarak dari {start}": _fmt(c["distance"]),
-                        "Dipilih": (
-                            "✅"
-                            if c["node"] == item["selected_node"]
-                            else ""
-                        )
-                    }
-                    for c in candidates
-                ]),
-                use_container_width=True,
-                hide_index=True
-            )
-
-
-    # ---------------- Insertion: sisipkan node ----------------
-
-    elif step_type == "insert":
-
-        selected = L(item["selected_node"])
-
-        st.markdown(
-            f"**1. Pilih node yang akan disisipkan:** "
-            f"**{selected}** "
-            f"({RULE_TEXT.get(rule, '')})"
-        )
-
-        if candidates:
-
-            st.dataframe(
-                pd.DataFrame([
-                    {
-                        "Node": L(c["node"]),
-                        "Jarak terdekat ke tour": _fmt(c["distance"]),
-                        "Node tour terdekat": (
-                            L(c["nearest_tour_node"])
-                            if "nearest_tour_node" in c
-                            else "-"
-                        ),
-                        "Dipilih": (
-                            "✅"
-                            if c["node"] == item["selected_node"]
-                            else ""
-                        )
-                    }
-                    for c in candidates
-                ]),
-                use_container_width=True,
-                hide_index=True
-            )
-
-        if options:
-
-            st.markdown(
-                f"**2. Cari posisi terbaik untuk {selected}** — "
-                f"tambahan jarak = "
-                f"d(i,{selected}) + d({selected},j) − d(i,j):"
-            )
-
-            best_position = None
-
-            if item.get("insert_between") is not None:
-                best_pair = tuple(item["insert_between"])
             else:
-                best_pair = None
 
-            st.dataframe(
-                pd.DataFrame([
-                    {
-                        "Sisipkan antara": (
-                            f"{L(o['after'])} dan {L(o['before'])}"
-                        ),
-                        "Perhitungan": (
-                            f"{_fmt(o['d_after_selected'])} + "
-                            f"{_fmt(o['d_selected_before'])} − "
-                            f"{_fmt(o['d_after_before'])}"
-                        ),
-                        "Tambahan jarak": _fmt(o["increase"]),
-                        "Terbaik": (
-                            "✅"
-                            if (o["after"], o["before"]) == best_pair
-                            else ""
-                        )
-                    }
-                    for o in options
-                ]),
-                use_container_width=True,
-                hide_index=True
-            )
-
-        if item.get("insert_between") is not None:
-
-            st.markdown(
-                f"**3. Hasil:** {selected} disisipkan di antara "
-                f"**{format_history_value(df, 'insert_between', item['insert_between']).replace(' – ', ' dan ')}** "
-                f"(tambahan jarak {_fmt(item['increase'])})."
-            )
-
-    else:
-
-        return False
+                st.caption("(kosong)")
 
 
-    if "route" in item:
+def highlight_selected_row(table, selected):
+    """Beri warna pada baris iterasi yang sedang dipilih."""
 
-        st.markdown(
-            f"**Rute sekarang:** "
-            f"`{format_history_value(df, 'route', item['route'])}`"
-        )
+    if selected < 0:
+        return table
 
-    if "distance" in item:
+    def _color(row):
 
-        note = (
-            " (sementara, sudah termasuk kembali ke start node)"
-            if step_type in ("initial", "move")
+        style = (
+            "background-color: rgba(108, 92, 231, 0.28)"
+            if row.name == selected
             else ""
         )
 
-        st.markdown(
-            f"**Jarak total:** `{_fmt(item['distance'])}`{note}"
-        )
-
-    return True
-
-
-def get_selected_iteration(index, history):
-    """Baris iterasi yang dipilih pada tabel (0-based), atau None."""
-
-    if not history:
-        return None
-
-    key = (
-        f"independent_table_"
-        f"{st.session_state.get('independent_run_id', 0)}_"
-        f"{index}"
-    )
-
-    state = st.session_state.get(key)
+        return [style] * len(row)
 
     try:
-        rows = list(state["selection"]["rows"])
+        return table.style.apply(_color, axis=1)
     except Exception:
-        rows = []
-
-    if rows and 0 <= int(rows[0]) < len(history):
-        return int(rows[0])
-
-    return None
+        return table
 
 
-def render_iteration_steps(df, result, index, selected=None):
-    """Expander (tertutup): tabel iterasi yang bisa diklik + perhitungannya."""
+# ------------------------------------------------------------
+# HASIL SATU ALGORITMA
+# ------------------------------------------------------------
 
-    history = result.get("history")
+def render_independent_result(df, dist_matrix, result, index):
+    """
+    Urutan tampilan:
+    1. Nama algoritma + penjelasan singkat
+    2. Hasil terbaik / hasil akhir
+    3. [Visualisasi]  |  [Tabel iterasi + slider Pilih Iterasi]
+    4. Expander: perhitungan detail iterasi yang dipilih
+    """
 
-    with st.expander(
-        "🔍 Lihat langkah per iterasi",
-        expanded=False
-    ):
+    method = result["method"]
+    history = result.get("history") or []
+    kind = method_kind(method)
+    labels = df["node"].astype(str).tolist()
+    run_id = st.session_state.get("independent_run_id", 0)
 
-        if result["initial_route"] is not None:
+    is_improvement = ALGORITHMS[method]["type"] in (
+        "Local Search",
+        "Metaheuristic"
+    )
 
-            st.write(
-                "**Initial Route:**",
-                route_to_labels(
-                    df,
-                    result["initial_route"]
-                )
-            )
+    # -------------------- 1. judul + penjelasan --------------------
 
-            st.write(
-                "**Initial Distance:**",
-                f"{result['initial_distance']:.2f}"
-            )
+    st.subheader(method)
 
-        if not history:
+    st.info(
+        ALGORITHM_EXPLANATIONS.get(
+            method,
+            ALGORITHMS[method]["description"]
+        )
+    )
 
-            st.info(
-                "Algoritma ini belum mengembalikan history "
-                "per iterasi. Pastikan fungsinya me-return "
-                "history (list of dict, satu dict per iterasi)."
-            )
+    # -------------------- 2. hasil terbaik / akhir ------------------
 
-            return
+    st.markdown(
+        "#### Hasil Terbaik" if is_improvement else "#### Hasil Akhir"
+    )
 
-        if len(df) <= 26:
+    col1, col2, col3 = st.columns(3)
 
-            st.caption(
-                "Indeks node: "
-                + ", ".join(
-                    f"{i} = {n}"
-                    for i, n in enumerate(df["node"])
-                )
-            )
+    with col1:
+
+        st.metric(
+            "Initial Distance",
+            "-"
+            if result["initial_distance"] is None
+            else f"{result['initial_distance']:.2f}"
+        )
+
+    with col2:
+
+        st.metric(
+            "Final Distance",
+            f"{result['final_distance']:.2f}"
+        )
+
+    with col3:
+
+        st.metric(
+            "Execution Time",
+            f"{result['execution_time'] * 1000:.3f} ms"
+        )
+
+    if result["initial_route"] is not None:
+
+        st.write(
+            "**Initial Route:**",
+            route_to_labels(df, result["initial_route"])
+        )
+
+    st.write(
+        "**Route:**",
+        route_to_labels(df, result["route"])
+    )
+
+    distances = [
+        h.get("distance")
+        for h in history
+        if isinstance(h, dict) and h.get("distance") is not None
+    ]
+
+    if is_improvement and len(distances) > 1:
+
+        best_position = distances.index(min(distances))
 
         st.caption(
-            "Klik satu baris untuk melihat iterasi tersebut pada grafik "
-            "di atas. Klik lagi untuk membatalkan (grafik kembali ke "
-            "hasil akhir)."
+            f"Jarak terbaik ditemukan pada iterasi "
+            f"{history[best_position].get('iteration', best_position)}. "
+            f"Iterasi terakhir: "
+            f"{history[-1].get('iteration', len(history) - 1)} "
+            f"(distance {distances[-1]:.2f})."
         )
 
-        st.dataframe(
-            history_to_dataframe(df, history),
-            use_container_width=True,
-            hide_index=True,
-            key=(
-                f"independent_table_"
-                f"{st.session_state.get('independent_run_id', 0)}_"
-                f"{index}"
-            ),
-            on_select="rerun",
-            selection_mode="single-row"
-        )
+    # -------------------- 3. visualisasi | tabel -------------------
 
-        if selected is None:
+    selected = -1
 
-            st.info(
-                "Belum ada iterasi yang dipilih — grafik menampilkan "
-                "hasil akhir."
+    col_viz, col_table = st.columns(2)
+
+    with col_table:
+
+        st.markdown("**Tabel Iterasi**")
+
+        if history:
+
+            table_slot = st.container()
+
+            options = [-1] + list(range(len(history)))
+
+            def _option_label(value):
+
+                if value == -1:
+                    return "Hasil akhir"
+
+                item = history[value]
+
+                number = (
+                    item.get("iteration", value)
+                    if isinstance(item, dict)
+                    else value
+                )
+
+                return f"Iterasi {number}"
+
+            selected = st.select_slider(
+                "Pilih Iterasi",
+                options=options,
+                value=-1,
+                format_func=_option_label,
+                key=f"independent_iter_{run_id}_{index}"
             )
 
-            return
-
-        item = history[selected]
-
-        if isinstance(item, dict):
-
-            st.markdown(
-                f"#### Iterasi {item.get('iteration', selected + 1)}"
+            table = build_iteration_table(
+                kind,
+                history,
+                dist_matrix,
+                labels
             )
 
-            explained = render_step_explanation(df, item)
+            with table_slot:
 
-            if not explained:
-
-                for key, value in item.items():
-
-                    if _is_detail_value(key, value):
-                        continue
-
-                    st.write(
-                        f"**{key.replace('_', ' ').title()}:**",
-                        format_history_value(df, key, value)
-                    )
+                st.dataframe(
+                    highlight_selected_row(table, selected),
+                    use_container_width=True,
+                    hide_index=True,
+                    height=340
+                )
 
         else:
 
-            st.write(str(item))
+            st.info(
+                "Algoritma ini tidak mengembalikan history iterasi."
+            )
+
+    with col_viz:
+
+        plot_route_data = result["route"]
+
+        plot_title = f"{method} — Final Route"
+
+        if selected >= 0:
+
+            step_item = history[selected]
+
+            step_route = find_route_in_step(df, step_item)
+
+            step_number = (
+                step_item.get("iteration", selected)
+                if isinstance(step_item, dict)
+                else selected
+            )
+
+            if step_route is not None:
+
+                plot_route_data = step_route
+
+                plot_title = f"{method} — Iterasi {step_number}"
+
+            else:
+
+                st.caption(
+                    f"Iterasi {step_number} tidak menyimpan rute; "
+                    "menampilkan hasil akhir."
+                )
+
+        st.plotly_chart(
+            plot_route(
+                df,
+                plot_route_data,
+                home=plot_route_data[0],
+                title=plot_title
+            ),
+            use_container_width=True,
+            key=f"independent_route_{index}"
+        )
+
+    # -------------------- 4. detail (expander) ---------------------
+
+    with st.expander(
+        "🔍 Lihat langkah per iterasi (perhitungan detail)",
+        expanded=False
+    ):
+
+        if not history:
+
+            st.info("Tidak ada history untuk ditampilkan.")
+
+        elif selected < 0:
+
+            st.info(
+                "Geser slider **Pilih Iterasi** di atas untuk melihat "
+                "perhitungan detail iterasi tertentu. Grafik dan tabel "
+                "ikut menyesuaikan."
+            )
+
+        else:
+
+            render_view(
+                build_iteration_view(
+                    kind,
+                    history,
+                    selected,
+                    dist_matrix,
+                    labels
+                )
+            )
 
 
 # ============================================================
@@ -1155,7 +2048,9 @@ def execute_independent_algorithm(
         "initial_distance": initial_distance,
         "final_distance": final_distance,
         "execution_time": execution_time,
-        "history": extract_history(result)
+        "history": normalize_history(
+            extract_history(result)
+        )
     }
 
 
@@ -1492,241 +2387,6 @@ with st.sidebar:
     initial_solutions = {}
     algorithm_parameters = {}
 
-
-    # --------------------------------------------------------
-    # INITIAL SOLUTION
-    # --------------------------------------------------------
-
-    has_constructive = any(
-        ALGORITHMS[method]["needs_start_node"]
-        for method in selected_algorithms
-    )
-
-    has_route_algorithm = any(
-        ALGORITHMS[method]["needs_initial_route"]
-        for method in selected_algorithms
-    )
-
-
-    if has_constructive or has_route_algorithm:
-
-        st.divider()
-        st.subheader("Initial Solution")
-
-
-        # ====================================================
-        # INITIAL SOLUTION PER ALGORITHM
-        # ====================================================
-
-        for idx, method in enumerate(selected_algorithms):
-
-            config = ALGORITHMS[method]
-
-            st.markdown(f"**{method}**")
-
-
-            # ------------------------------------------------
-            # CONSTRUCTIVE → START NODE
-            # ------------------------------------------------
-
-            if config["needs_start_node"]:
-
-                start_node_label = st.selectbox(
-                    "Start Node",
-                    df["node"].tolist(),
-                    key=f"independent_start_node_{method}",
-                    help=(
-                        "Digunakan oleh metode Constructive "
-                        "untuk menentukan node awal."
-                    )
-                )
-
-                start_node = int(
-                    df.index[
-                        df["node"] == start_node_label
-                    ][0]
-                )
-
-                initial_solutions[method] = {
-                    "type": "start_node",
-                    "start_node": start_node
-                }
-
-
-            # ------------------------------------------------
-            # LOCAL SEARCH / METAHEURISTIC → INITIAL ROUTE
-            # ------------------------------------------------
-
-            elif config["needs_initial_route"]:
-
-                # Hanya algoritma sebelumnya yang juga memakai
-                # initial route yang bisa dijadikan acuan.
-                previous_algorithms = [
-                    m
-                    for m in selected_algorithms[:idx]
-                    if ALGORITHMS[m]["needs_initial_route"]
-                ]
-
-                reuse_options = [
-                    "Generate Random",
-                    "Manual"
-                ]
-
-                if previous_algorithms:
-
-                    reuse_options += [
-                        f"Sama dengan {previous_algorithms[-1]}"
-                    ]
-
-                route_type = st.selectbox(
-                    "Starting Route",
-                    reuse_options,
-                    key=f"independent_route_type_{method}",
-                    help=(
-                        "Local Search dan Metaheuristic "
-                        "membutuhkan satu rute sebagai solusi awal."
-                    )
-                )
-
-
-                # --------------------------------------------
-                # SAMA DENGAN ALGORITMA SEBELUMNYA
-                # --------------------------------------------
-
-                if route_type.startswith("Sama dengan"):
-
-                    source_method = previous_algorithms[-1]
-
-                    initial_solutions[method] = {
-                        "type": "same",
-                        "source": source_method
-                    }
-
-
-                # --------------------------------------------
-                # RANDOM
-                # --------------------------------------------
-
-                elif route_type == "Generate Random":
-
-                    seed = st.number_input(
-                        "Seed",
-                        min_value=0,
-                        max_value=99999,
-                        value=42,
-                        step=1,
-                        key=f"independent_initial_seed_{method}"
-                    )
-
-                    random_start_label = st.selectbox(
-                        "Start Node",
-                        df["node"].tolist(),
-                        key=f"independent_random_start_{method}"
-                    )
-
-                    random_start = int(
-                        df.index[
-                            df["node"] == random_start_label
-                        ][0]
-                    )
-
-                    route = generate_initial_tour(
-                        len(df),
-                        home=random_start,
-                        seed=int(seed)
-                    )
-
-                    initial_solutions[method] = {
-                        "type": "route",
-                        "route": route
-                    }
-
-
-                # --------------------------------------------
-                # MANUAL
-                # --------------------------------------------
-
-                elif route_type == "Manual":
-
-                    route_start = st.selectbox(
-                        "Route Start",
-                        df["node"].tolist(),
-                        key=f"independent_route_start_{method}"
-                    )
-
-                    route_start_index = int(
-                        df.index[
-                            df["node"] == route_start
-                        ][0]
-                    )
-
-
-                    remaining_nodes = [
-                        node
-                        for node in df["node"].tolist()
-                        if node != route_start
-                    ]
-
-
-                    route_order = st.multiselect(
-                        "Node Order",
-                        remaining_nodes,
-                        key=f"independent_route_order_{method}"
-                    )
-
-
-                    if len(route_order) == len(remaining_nodes):
-
-                        route = [
-                            route_start_index
-                        ]
-
-                        for node in route_order:
-
-                            route.append(
-                                int(
-                                    df.index[
-                                        df["node"] == node
-                                    ][0]
-                                )
-                            )
-
-                        route.append(
-                            route_start_index
-                        )
-
-
-                        initial_solutions[method] = {
-                            "type": "route",
-                            "route": route
-                        }
-
-
-                        # ------------------------------------
-                        # FINAL INITIAL ROUTE
-                        # ------------------------------------
-
-                        st.caption("Final Initial Route")
-
-                        st.code(
-                            " → ".join(
-                                str(df.iloc[i]["node"])
-                                for i in route
-                            )
-                        )
-
-
-                    else:
-
-                        st.caption(
-                            "Pilih seluruh node untuk membentuk rute."
-                        )
-
-
-    # --------------------------------------------------------
-    # ALGORITHM PARAMETERS
-    # --------------------------------------------------------
-
     algorithms_with_parameters = [
         method
         for method in selected_algorithms
@@ -1734,102 +2394,301 @@ with st.sidebar:
     ]
 
 
-    if algorithms_with_parameters:
+    if selected_algorithms:
 
         st.divider()
 
-        st.subheader(
-            "Algorithm Parameters"
-        )
+        tab_initial, tab_parameters = st.tabs([
+            "Initial Solution",
+            "Parameters"
+        ])
+
+        # Kartu dibuka otomatis jika algoritmanya sedikit
+        expand_cards = len(selected_algorithms) <= 2
 
 
-        for method in algorithms_with_parameters:
+        # ====================================================
+        # TAB: INITIAL SOLUTION
+        # ====================================================
 
-            st.markdown(
-                f"**{method}**"
-            )
+        with tab_initial:
 
-            algorithm_parameters[method] = {}
+            for idx, method in enumerate(selected_algorithms):
+
+                config = ALGORITHMS[method]
+
+                with st.expander(
+                    method,
+                    expanded=expand_cards
+                ):
+
+                    # --------------------------------------------
+                    # CONSTRUCTIVE → START NODE
+                    # --------------------------------------------
+
+                    if config["needs_start_node"]:
+
+                        start_node_label = st.selectbox(
+                            "Start Node",
+                            df["node"].tolist(),
+                            key=f"independent_start_node_{method}",
+                            help=(
+                                "Digunakan oleh metode Constructive "
+                                "untuk menentukan node awal."
+                            )
+                        )
+
+                        start_node = int(
+                            df.index[
+                                df["node"] == start_node_label
+                            ][0]
+                        )
+
+                        initial_solutions[method] = {
+                            "type": "start_node",
+                            "start_node": start_node
+                        }
 
 
-            for parameter, config in (
-                ALGORITHMS[method]["parameters"].items()
-            ):
+                    # --------------------------------------------
+                    # LOCAL SEARCH / METAHEURISTIC → INITIAL ROUTE
+                    # --------------------------------------------
 
-                label = parameter.replace(
-                    "_",
-                    " "
-                ).title()
+                    elif config["needs_initial_route"]:
+
+                        # Hanya algoritma sebelumnya yang juga memakai
+                        # initial route yang bisa dijadikan acuan.
+                        previous_algorithms = [
+                            m
+                            for m in selected_algorithms[:idx]
+                            if ALGORITHMS[m]["needs_initial_route"]
+                        ]
+
+                        reuse_options = [
+                            "Generate Random",
+                            "Manual"
+                        ]
+
+                        if previous_algorithms:
+
+                            reuse_options += [
+                                f"Sama dengan {previous_algorithms[-1]}"
+                            ]
+
+                        route_type = st.selectbox(
+                            "Starting Route",
+                            reuse_options,
+                            key=f"independent_route_type_{method}",
+                            help=(
+                                "Local Search dan Metaheuristic "
+                                "membutuhkan satu rute sebagai solusi awal."
+                            )
+                        )
 
 
-                if config["type"] == "int":
+                        # ----------------------------------------
+                        # SAMA DENGAN ALGORITMA SEBELUMNYA
+                        # ----------------------------------------
 
-                    value = st.number_input(
-                        label,
-                        min_value=config["min"],
-                        max_value=config["max"],
-                        value=config["default"],
-                        step=config["step"],
-                        key=(
+                        if route_type.startswith("Sama dengan"):
+
+                            initial_solutions[method] = {
+                                "type": "same",
+                                "source": previous_algorithms[-1]
+                            }
+
+
+                        # ----------------------------------------
+                        # RANDOM
+                        # ----------------------------------------
+
+                        elif route_type == "Generate Random":
+
+                            random_start_label = st.selectbox(
+                                "Start Node",
+                                df["node"].tolist(),
+                                key=f"independent_random_start_{method}"
+                            )
+
+                            random_start = int(
+                                df.index[
+                                    df["node"] == random_start_label
+                                ][0]
+                            )
+
+                            seed = st.number_input(
+                                "Seed",
+                                min_value=0,
+                                max_value=99999,
+                                value=42,
+                                step=1,
+                                key=f"independent_initial_seed_{method}"
+                            )
+
+                            initial_solutions[method] = {
+                                "type": "route",
+                                "route": generate_initial_tour(
+                                    len(df),
+                                    home=random_start,
+                                    seed=int(seed)
+                                )
+                            }
+
+
+                        # ----------------------------------------
+                        # MANUAL
+                        # ----------------------------------------
+
+                        elif route_type == "Manual":
+
+                            route_start = st.selectbox(
+                                "Route Start",
+                                df["node"].tolist(),
+                                key=f"independent_route_start_{method}"
+                            )
+
+                            route_start_index = int(
+                                df.index[
+                                    df["node"] == route_start
+                                ][0]
+                            )
+
+                            remaining_nodes = [
+                                node
+                                for node in df["node"].tolist()
+                                if node != route_start
+                            ]
+
+                            route_order = st.multiselect(
+                                "Node Order",
+                                remaining_nodes,
+                                key=f"independent_route_order_{method}"
+                            )
+
+                            if len(route_order) == len(remaining_nodes):
+
+                                route = [route_start_index]
+
+                                for node in route_order:
+
+                                    route.append(
+                                        int(
+                                            df.index[
+                                                df["node"] == node
+                                            ][0]
+                                        )
+                                    )
+
+                                route.append(route_start_index)
+
+                                initial_solutions[method] = {
+                                    "type": "route",
+                                    "route": route
+                                }
+
+                                st.caption("Final Initial Route")
+
+                                st.code(
+                                    " → ".join(
+                                        str(df.iloc[i]["node"])
+                                        for i in route
+                                    )
+                                )
+
+                            else:
+
+                                st.caption(
+                                    "Pilih seluruh node untuk membentuk rute."
+                                )
+
+
+        # ====================================================
+        # TAB: ALGORITHM PARAMETERS
+        # ====================================================
+
+        with tab_parameters:
+
+            if not algorithms_with_parameters:
+
+                st.caption(
+                    "Algoritma yang dipilih tidak memiliki parameter."
+                )
+
+            for method in algorithms_with_parameters:
+
+                with st.expander(
+                    method,
+                    expanded=expand_cards
+                ):
+
+                    algorithm_parameters[method] = {}
+
+                    for parameter, config in (
+                        ALGORITHMS[method]["parameters"].items()
+                    ):
+
+                        label = parameter.replace(
+                            "_",
+                            " "
+                        ).title()
+
+                        widget_key = (
                             f"independent_"
                             f"{method}_"
                             f"{parameter}"
-                        ),
-                        help=config["help"]
-                    )
+                        )
+
+                        if config["type"] in ("int", "float"):
+
+                            value = st.number_input(
+                                label,
+                                min_value=config["min"],
+                                max_value=config["max"],
+                                value=config["default"],
+                                step=config["step"],
+                                key=widget_key,
+                                help=config["help"]
+                            )
+
+                        elif config["type"] == "select":
+
+                            value = st.selectbox(
+                                label,
+                                config["options"],
+                                index=config["options"].index(
+                                    config["default"]
+                                ),
+                                key=widget_key,
+                                help=config["help"]
+                            )
+
+                        elif config["type"] == "bool":
+
+                            value = st.checkbox(
+                                label,
+                                value=config["default"],
+                                key=widget_key,
+                                help=config["help"]
+                            )
+
+                        algorithm_parameters[method][
+                            parameter
+                        ] = value
 
 
-                elif config["type"] == "float":
+    # --------------------------------------------------------
+    # RUN
+    # --------------------------------------------------------
 
-                    value = st.number_input(
-                        label,
-                        min_value=config["min"],
-                        max_value=config["max"],
-                        value=config["default"],
-                        step=config["step"],
-                        key=(
-                            f"independent_"
-                            f"{method}_"
-                            f"{parameter}"
-                        ),
-                        help=config["help"]
-                    )
+    st.divider()
 
-
-                elif config["type"] == "select":
-
-                    value = st.selectbox(
-                        label,
-                        config["options"],
-                        index=config["options"].index(
-                            config["default"]
-                        ),
-                        key=(
-                            f"independent_"
-                            f"{method}_"
-                            f"{parameter}"
-                        ),
-                        help=config["help"]
-                    )
-
-
-                elif config["type"] == "bool":
-
-                    value = st.checkbox(
-                        label,
-                        value=config["default"],
-                        key=(
-                            f"independent_"
-                            f"{method}_"
-                            f"{parameter}"
-                        ),
-                        help=config["help"]
-                    )
-
-
-                algorithm_parameters[method][
-                    parameter
-                ] = value
+    run_independent = st.button(
+        "▶ Run Independent",
+        type="primary",
+        use_container_width=True,
+        disabled=not selected_algorithms,
+        key="independent_run_button"
+    )
 
 
 # ============================================================
@@ -1844,7 +2703,9 @@ with tab_independent:
 
     st.caption(
         "Setiap algoritma berjalan secara independen "
-        "menggunakan input awalnya masing-masing."
+        "menggunakan input awalnya masing-masing. "
+        "Atur algoritma, initial solution, dan parameter di sidebar, "
+        "lalu klik Run."
     )
 
 
@@ -1855,91 +2716,91 @@ with tab_independent:
         )
 
 
-    else:
+    # ========================================================
+    # RUN
+    # ========================================================
 
-        if st.button(
-            "▶ Run Independent",
-            type="primary",
-            use_container_width=True
-        ):
+    if run_independent and selected_algorithms:
 
-            results = []
+        results = []
 
-            # Reset pilihan baris tabel iterasi pada hasil sebelumnya
-            st.session_state.independent_run_id += 1
+        # Reset pilihan iterasi pada hasil sebelumnya
+        st.session_state.independent_run_id += 1
 
 
-            # ------------------------------------------------
-            # RUN EACH ALGORITHM INDEPENDENTLY
-            # ------------------------------------------------
+        # ----------------------------------------------------
+        # RUN EACH ALGORITHM INDEPENDENTLY
+        # ----------------------------------------------------
 
-            for method in selected_algorithms:
+        for method in selected_algorithms:
 
-                try:
+            try:
 
-                    start_node, initial_route = resolve_initial(
+                start_node, initial_route = resolve_initial(
+                    method,
+                    initial_solutions,
+                    selected_algorithms
+                )
+
+                if (
+                    ALGORITHMS[method]["needs_start_node"]
+                    and start_node is None
+                ):
+
+                    raise ValueError(
+                        "Start Node belum dipilih."
+                    )
+
+                if (
+                    ALGORITHMS[method]["needs_initial_route"]
+                    and initial_route is None
+                ):
+
+                    raise ValueError(
+                        "Starting Route belum lengkap."
+                    )
+
+                parameters = dict(
+                    algorithm_parameters.get(
                         method,
-                        initial_solutions,
-                        selected_algorithms
+                        {}
                     )
+                )
 
-                    if (
-                        ALGORITHMS[method]["needs_start_node"]
-                        and start_node is None
-                    ):
+                # Agar detail per iterasi (mis. semua kandidat
+                # Tabu Search) tersedia untuk dataset kecil-menengah.
+                if (
+                    "verbose_history"
+                    in ALGORITHMS[method]["parameters"]
+                    and len(df) <= DETAIL_NODE_LIMIT
+                ):
 
-                        raise ValueError(
-                            "Start Node belum dipilih."
-                        )
+                    parameters["verbose_history"] = True
 
-                    if (
-                        ALGORITHMS[method]["needs_initial_route"]
-                        and initial_route is None
-                    ):
+                result = execute_independent_algorithm(
+                    method=method,
+                    df=df,
+                    dist_matrix=dist_matrix,
+                    start_node=start_node,
+                    initial_route=initial_route,
+                    parameters=parameters
+                )
 
-                        raise ValueError(
-                            "Starting Route belum lengkap."
-                        )
-
-                    parameters = dict(
-                        algorithm_parameters.get(
-                            method,
-                            {}
-                        )
-                    )
-
-                    # Agar langkah per iterasi selalu tersedia
-                    if (
-                        "verbose_history"
-                        in ALGORITHMS[method]["parameters"]
-                    ):
-
-                        parameters["verbose_history"] = True
-
-                    result = execute_independent_algorithm(
-                        method=method,
-                        df=df,
-                        dist_matrix=dist_matrix,
-                        start_node=start_node,
-                        initial_route=initial_route,
-                        parameters=parameters
-                    )
-
-                    results.append(
-                        result
-                    )
+                results.append(
+                    result
+                )
 
 
-                except Exception as e:
+            except Exception as e:
 
-                    st.error(
-                        f"{method} gagal dijalankan: {e}"
-                    )
+                st.error(
+                    f"{method} gagal dijalankan: {e}"
+                )
 
 
-            st.session_state.independent_results = (
-                results
-            )
+        st.session_state.independent_results = (
+            results
+        )
 
 
     # ========================================================
@@ -1960,144 +2821,12 @@ with tab_independent:
 
         for i, result in enumerate(results):
 
-            method = result["method"]
-
-
-            # ------------------------------------------------
-            # HASIL AKHIR
-            # ------------------------------------------------
-
-            st.subheader(
-                method
-            )
-
-            col1, col2, col3 = st.columns(3)
-
-
-            with col1:
-
-                if result["initial_distance"] is not None:
-
-                    st.metric(
-                        "Initial Distance",
-                        f"{result['initial_distance']:.2f}"
-                    )
-
-                else:
-
-                    st.metric(
-                        "Initial Distance",
-                        "-"
-                    )
-
-
-            with col2:
-
-                st.metric(
-                    "Final Distance",
-                    f"{result['final_distance']:.2f}"
-                )
-
-
-            with col3:
-
-                st.metric(
-                    "Execution Time",
-                    f"{result['execution_time'] * 1000:.3f} ms"
-                )
-
-
-            st.write(
-                "**Route:**",
-                route_to_labels(
-                    df,
-                    result["route"]
-                )
-            )
-
-
-            # ------------------------------------------------
-            # GRAFIK (satu grafik: hasil akhir / iterasi terpilih)
-            # ------------------------------------------------
-
-            history = result.get("history")
-
-            selected = get_selected_iteration(
-                i,
-                history
-            )
-
-            plot_route_data = result["route"]
-
-            plot_title = f"{method} — Final Route"
-
-            plot_caption = (
-                "Menampilkan: **hasil akhir** "
-                "(pilih baris pada tabel iterasi di bawah "
-                "untuk melihat iterasi tertentu)."
-            )
-
-            if selected is not None:
-
-                step_item = history[selected]
-
-                step_route = find_route_in_step(
-                    df,
-                    step_item
-                )
-
-                step_number = (
-                    step_item.get("iteration", selected + 1)
-                    if isinstance(step_item, dict)
-                    else selected + 1
-                )
-
-                if step_route is not None:
-
-                    plot_route_data = step_route
-
-                    plot_title = f"{method} — Iterasi {step_number}"
-
-                    plot_caption = (
-                        f"Menampilkan: **iterasi {step_number}**."
-                    )
-
-                else:
-
-                    plot_caption = (
-                        f"Iterasi {step_number} tidak menyimpan rute, "
-                        "jadi grafik menampilkan hasil akhir."
-                    )
-
-            if plot_route_data is not None:
-
-                st.caption(plot_caption)
-
-                fig = plot_route(
-                    df,
-                    plot_route_data,
-                    home=plot_route_data[0],
-                    title=plot_title
-                )
-
-                st.plotly_chart(
-                    fig,
-                    use_container_width=True,
-                    key=f"independent_route_{i}"
-                )
-
-
-            # ------------------------------------------------
-            # PROSES PER ITERASI (expander, tertutup)
-            # ------------------------------------------------
-
-            render_iteration_steps(
+            render_independent_result(
                 df,
+                dist_matrix,
                 result,
-                i,
-                selected
+                i
             )
-
 
             if i < len(results) - 1:
 
