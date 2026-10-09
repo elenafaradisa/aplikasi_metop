@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import math
 import random
 import time
 
@@ -950,7 +951,7 @@ def _tabu_list_table(tabu_list, labels, k, new_attr=None):
     for attr, expiry in (tabu_list or {}).items():
 
         rows.append({
-            "Edge yang dilarang dibuang kembali": attr_text(attr, labels),
+            "Edge yang dibuang (masuk tabu list)": attr_text(attr, labels),
             "Tabu sampai iterasi": int(expiry),
             "Status": (
                 "baru ditambahkan" if (new_attr is not None and attr == new_attr)
@@ -1008,8 +1009,8 @@ def _tabu_view(history, k, dist, labels):
         blocks.append(_table(
             "Tabu List (aktif pada iterasi ini)",
             _tabu_list_table(active, L, k),
-            "Move yang membuang edge ini dilarang, kecuali memenuhi "
-            "aspiration criterion (jarak < aspiration level).",
+            "Move yang melanggar larangan ini tidak boleh dipilih, kecuali "
+            "memenuhi aspiration criterion (jarak < aspiration level).",
         ))
 
     else:
@@ -1605,7 +1606,14 @@ def highlight_selected_row(table, selected):
 # HASIL SATU ALGORITMA
 # ------------------------------------------------------------
 
-def render_independent_result(df, dist_matrix, result, index):
+def render_independent_result(
+    df,
+    dist_matrix,
+    result,
+    index,
+    key_prefix="independent",
+    run_id=None
+):
     """
     Urutan tampilan:
     1. Nama algoritma + penjelasan singkat
@@ -1618,7 +1626,8 @@ def render_independent_result(df, dist_matrix, result, index):
     history = result.get("history") or []
     kind = method_kind(method)
     labels = df["node"].astype(str).tolist()
-    run_id = st.session_state.get("independent_run_id", 0)
+    if run_id is None:
+        run_id = st.session_state.get("independent_run_id", 0)
 
     is_improvement = ALGORITHMS[method]["type"] in (
         "Local Search",
@@ -1666,6 +1675,15 @@ def render_independent_result(df, dist_matrix, result, index):
             "Execution Time",
             f"{result['execution_time'] * 1000:.3f} ms"
         )
+
+    start_label = str(df.iloc[int(result["route"][0])]["node"])
+
+    start_note = result.get("start_note")
+
+    st.write(
+        "**Start Node:**",
+        start_label + (f" ({start_note})" if start_note else "")
+    )
 
     if result["initial_route"] is not None:
 
@@ -1733,7 +1751,7 @@ def render_independent_result(df, dist_matrix, result, index):
                 options=options,
                 value=-1,
                 format_func=_option_label,
-                key=f"independent_iter_{run_id}_{index}"
+                key=f"{key_prefix}_iter_{run_id}_{index}"
             )
 
             table = build_iteration_table(
@@ -1797,7 +1815,7 @@ def render_independent_result(df, dist_matrix, result, index):
                 title=plot_title
             ),
             use_container_width=True,
-            key=f"independent_route_{index}"
+            key=f"{key_prefix}_route_{index}"
         )
 
     # -------------------- 4. detail (expander) ---------------------
@@ -2051,13 +2069,1017 @@ def execute_independent_algorithm(
 
 
 # ============================================================
+# PENGATURAN SIDEBAR (TERSIMPAN PER ALGORITMA)
+# ============================================================
+#
+# Sidebar hanya menampilkan pengaturan SATU algoritma (yang dipilih
+# pada radio "Pilih algoritma"). Karena widget yang tidak ditampilkan
+# dihapus oleh Streamlit, nilai semua pengaturan disimpan manual di
+# st.session_state.independent_cfg agar tidak hilang saat berpindah
+# algoritma.
+
+RANDOM_NODE = "🎲 Random"
+
+if "independent_cfg" not in st.session_state:
+    st.session_state.independent_cfg = {}
+
+
+def cfg_get(method, name, default=None):
+
+    return (
+        st.session_state.independent_cfg
+        .get(method, {})
+        .get(name, default)
+    )
+
+
+def cfg_set(method, name, value):
+
+    st.session_state.independent_cfg.setdefault(
+        method,
+        {}
+    )[name] = value
+
+    return value
+
+
+def _cfg_key(method, name):
+
+    return f"independent_cfg_{method}_{name}"
+
+
+def cfg_selectbox(method, name, label, options, default=None, **kwargs):
+
+    stored = cfg_get(
+        method,
+        name,
+        options[0] if default is None else default
+    )
+
+    index = options.index(stored) if stored in options else 0
+
+    value = st.selectbox(
+        label,
+        options,
+        index=index,
+        key=_cfg_key(method, name),
+        **kwargs
+    )
+
+    return cfg_set(method, name, value)
+
+
+def cfg_number(method, name, label, default, **kwargs):
+
+    value = st.number_input(
+        label,
+        value=cfg_get(method, name, default),
+        key=_cfg_key(method, name),
+        **kwargs
+    )
+
+    return cfg_set(method, name, value)
+
+
+def cfg_checkbox(method, name, label, default, **kwargs):
+
+    value = st.checkbox(
+        label,
+        value=cfg_get(method, name, default),
+        key=_cfg_key(method, name),
+        **kwargs
+    )
+
+    return cfg_set(method, name, value)
+
+
+def cfg_multiselect(method, name, label, options, **kwargs):
+
+    stored = [
+        v
+        for v in cfg_get(method, name, [])
+        if v in options
+    ]
+
+    value = st.multiselect(
+        label,
+        options,
+        default=stored,
+        key=_cfg_key(method, name),
+        **kwargs
+    )
+
+    return cfg_set(method, name, value)
+
+
+def pick_random_node(n_nodes, seed):
+    """Pilih index node secara acak (reproducible dengan seed)."""
+
+    return random.Random(int(seed)).randrange(n_nodes)
+
+
+def previous_route_algorithms(method, selected_algorithms):
+    """Algoritma sebelumnya (yang juga memakai initial route)."""
+
+    position = selected_algorithms.index(method)
+
+    return [
+        m
+        for m in selected_algorithms[:position]
+        if ALGORITHMS[m]["needs_initial_route"]
+    ]
+
+
+# ------------------------------------------------------------
+# PANEL: INITIAL SOLUTION (satu algoritma)
+# ------------------------------------------------------------
+
+def render_initial_panel(method, selected_algorithms, df):
+
+    config = ALGORITHMS[method]
+
+    labels = df["node"].tolist()
+
+    start_options = labels + [RANDOM_NODE]
+
+
+    # ---------------- CONSTRUCTIVE → START NODE ----------------
+
+    if config["needs_start_node"]:
+
+        choice = cfg_selectbox(
+            method,
+            "start_choice",
+            "Start Node",
+            start_options,
+            default=labels[0],
+            help=(
+                "Node awal untuk metode Constructive. "
+                "Pilih Random untuk memilih node awal secara acak."
+            )
+        )
+
+        if choice == RANDOM_NODE:
+
+            seed = cfg_number(
+                method,
+                "start_seed",
+                "Seed (Random)",
+                42,
+                min_value=0,
+                max_value=99999,
+                step=1
+            )
+
+            st.caption(
+                f"Dengan seed {int(seed)}, start node = "
+                f"**{labels[pick_random_node(len(df), seed)]}**."
+            )
+
+        return
+
+
+    # ------------- LOCAL SEARCH / METAHEURISTIC → ROUTE -------------
+
+    previous = previous_route_algorithms(method, selected_algorithms)
+
+    route_options = ["Generate Random", "Manual"]
+
+    if previous:
+        route_options.append(f"Sama dengan {previous[-1]}")
+
+    route_type = cfg_selectbox(
+        method,
+        "route_type",
+        "Starting Route",
+        route_options,
+        default="Generate Random",
+        help=(
+            "Local Search dan Metaheuristic membutuhkan "
+            "satu rute sebagai solusi awal."
+        )
+    )
+
+
+    # ---------------- SAMA DENGAN ALGORITMA SEBELUMNYA ----------------
+
+    if route_type.startswith("Sama dengan"):
+
+        st.caption(
+            f"Memakai rute awal yang sama dengan **{previous[-1]}**."
+        )
+
+
+    # ---------------- GENERATE RANDOM ----------------
+
+    elif route_type == "Generate Random":
+
+        choice = cfg_selectbox(
+            method,
+            "random_start",
+            "Start Node",
+            start_options,
+            default=labels[0]
+        )
+
+        seed = cfg_number(
+            method,
+            "initial_seed",
+            "Seed",
+            42,
+            min_value=0,
+            max_value=99999,
+            step=1,
+            help=(
+                "Seed untuk mengacak rute "
+                "(dan memilih start node jika Random)."
+            )
+        )
+
+        start = (
+            pick_random_node(len(df), seed)
+            if choice == RANDOM_NODE
+            else labels.index(choice)
+        )
+
+        preview = generate_initial_tour(
+            len(df),
+            home=start,
+            seed=int(seed)
+        )
+
+        st.caption("Initial Route")
+
+        st.code(route_to_labels(df, preview))
+
+
+    # ---------------- MANUAL ----------------
+
+    else:
+
+        route_start = cfg_selectbox(
+            method,
+            "manual_start",
+            "Route Start",
+            labels,
+            default=labels[0]
+        )
+
+        remaining_nodes = [
+            node
+            for node in labels
+            if node != route_start
+        ]
+
+        route_order = cfg_multiselect(
+            method,
+            "manual_order",
+            "Node Order",
+            remaining_nodes
+        )
+
+        if len(route_order) == len(remaining_nodes):
+
+            st.caption("Final Initial Route")
+
+            st.code(
+                " → ".join(
+                    [route_start] + route_order + [route_start]
+                )
+            )
+
+        else:
+
+            st.caption(
+                "Pilih seluruh node untuk membentuk rute."
+            )
+
+
+# ------------------------------------------------------------
+# PANEL: PARAMETER (satu algoritma)
+# ------------------------------------------------------------
+
+def render_parameter_panel(method):
+
+    for parameter, config in ALGORITHMS[method]["parameters"].items():
+
+        label = parameter.replace("_", " ").title()
+
+        name = f"param_{parameter}"
+
+        if config["type"] == "int":
+
+            cfg_number(
+                method,
+                name,
+                label,
+                int(config["default"]),
+                min_value=int(config["min"]),
+                max_value=int(config["max"]),
+                step=int(config["step"]),
+                help=config["help"]
+            )
+
+        elif config["type"] == "float":
+
+            cfg_number(
+                method,
+                name,
+                label,
+                float(config["default"]),
+                min_value=float(config["min"]),
+                max_value=float(config["max"]),
+                step=float(config["step"]),
+                help=config["help"]
+            )
+
+        elif config["type"] == "select":
+
+            cfg_selectbox(
+                method,
+                name,
+                label,
+                config["options"],
+                default=config["default"],
+                help=config["help"]
+            )
+
+        elif config["type"] == "bool":
+
+            cfg_checkbox(
+                method,
+                name,
+                label,
+                config["default"],
+                help=config["help"]
+            )
+
+
+# ------------------------------------------------------------
+# BANGUN initial_solutions & parameter untuk SEMUA algoritma terpilih
+# (dibaca dari pengaturan tersimpan, bukan dari widget yang tampil)
+# ------------------------------------------------------------
+
+def build_initial_solutions(selected_algorithms, df):
+
+    labels = df["node"].tolist()
+
+    n = len(df)
+
+    solutions = {}
+
+    for method in selected_algorithms:
+
+        config = ALGORITHMS[method]
+
+
+        # ---------------- CONSTRUCTIVE ----------------
+
+        if config["needs_start_node"]:
+
+            choice = cfg_get(method, "start_choice", labels[0])
+
+            note = None
+
+            if choice == RANDOM_NODE:
+
+                seed = int(cfg_get(method, "start_seed", 42))
+
+                start = pick_random_node(n, seed)
+
+                note = f"dipilih acak (seed {seed})"
+
+            elif choice in labels:
+
+                start = labels.index(choice)
+
+            else:
+
+                start = 0
+
+            solutions[method] = {
+                "type": "start_node",
+                "start_node": start,
+                "note": note
+            }
+
+            continue
+
+
+        # ---------------- LOCAL SEARCH / METAHEURISTIC ----------------
+
+        previous = previous_route_algorithms(method, selected_algorithms)
+
+        route_type = cfg_get(method, "route_type", "Generate Random")
+
+        if previous and route_type == f"Sama dengan {previous[-1]}":
+
+            solutions[method] = {
+                "type": "same",
+                "source": previous[-1]
+            }
+
+        elif route_type == "Manual":
+
+            route_start = cfg_get(method, "manual_start", labels[0])
+
+            if route_start not in labels:
+                route_start = labels[0]
+
+            remaining = [x for x in labels if x != route_start]
+
+            order = [
+                x
+                for x in cfg_get(method, "manual_order", [])
+                if x in remaining
+            ]
+
+            if len(order) == len(remaining):
+
+                route = [
+                    labels.index(x)
+                    for x in [route_start] + order + [route_start]
+                ]
+
+                solutions[method] = {
+                    "type": "route",
+                    "route": route,
+                    "note": None
+                }
+
+        else:
+
+            choice = cfg_get(method, "random_start", labels[0])
+
+            seed = int(cfg_get(method, "initial_seed", 42))
+
+            note = None
+
+            if choice == RANDOM_NODE:
+
+                start = pick_random_node(n, seed)
+
+                note = f"dipilih acak (seed {seed})"
+
+            elif choice in labels:
+
+                start = labels.index(choice)
+
+            else:
+
+                start = 0
+
+            solutions[method] = {
+                "type": "route",
+                "route": generate_initial_tour(
+                    n,
+                    home=start,
+                    seed=seed
+                ),
+                "note": note
+            }
+
+    return solutions
+
+
+def build_algorithm_parameters(selected_algorithms):
+
+    parameters = {}
+
+    for method in selected_algorithms:
+
+        config = ALGORITHMS[method]["parameters"]
+
+        if not config:
+            continue
+
+        parameters[method] = {
+            parameter: cfg_get(
+                method,
+                f"param_{parameter}",
+                settings["default"]
+            )
+            for parameter, settings in config.items()
+        }
+
+    return parameters
+
+
+def start_note_of(method, initial_solutions):
+    """Catatan start node (mis. 'dipilih acak') mengikuti rantai 'Sama dengan'."""
+
+    seen = set()
+
+    while method not in seen:
+
+        seen.add(method)
+
+        solution = initial_solutions.get(method) or {}
+
+        if solution.get("type") == "same":
+
+            method = solution["source"]
+
+            continue
+
+        return solution.get("note")
+
+    return None
+
+
+# ============================================================
+# TAB KHUSUS: TABU SEARCH (DATA TUGAS)
+# ============================================================
+#
+# Tab ini berdiri sendiri: TIDAK memakai dataset pada bagian
+# "Input Data" dan TIDAK terpengaruh sidebar. Algoritma yang dipakai
+# tetap Tabu Search yang sama dengan tab lainnya.
+#
+# >>> ISI DATA TUGAS DI BAWAH INI <<<
+#
+#   nodes           : label setiap node, misalnya ["A", "B", "C", "D", "E", "F", "G"]
+#   distance_matrix : matriks jarak n x n (list of list)         -> dipakai jika diisi
+#   coords          : koordinat [(x, y), ...] sesuai urutan nodes -> dipakai untuk
+#                     visualisasi, dan untuk menghitung jarak jika distance_matrix kosong
+#   initial_route   : rute awal dari soal (label node), misalnya
+#                     ["A", "B", "C", "D", "E", "F", "G", "A"]  (boleh tanpa kembali ke awal)
+#   tabu_tenure     : tabu tenure dari soal
+#   max_iter        : jumlah iterasi
+#   metric          : "euclidean" / "manhattan" (hanya jika jarak dihitung dari coords)
+#
+# Cukup isi nodes + (distance_matrix atau coords). Sisanya opsional.
+
+TABU_TASK_DATA = {
+    "nodes": None,
+    "distance_matrix": None,
+    "coords": None,
+    "initial_route": None,
+    "tabu_tenure": 3,
+    "max_iter": 10,
+    "metric": "euclidean",
+}
+
+
+# Data contoh (DUMMY) hanya untuk melihat struktur tab ini.
+TABU_TASK_EXAMPLE = {
+    "nodes": ["A", "B", "C", "D", "E", "F"],
+    "distance_matrix": None,
+    "coords": [(10, 20), (60, 80), (90, 40), (70, 10), (30, 50), (20, 90)],
+    "initial_route": ["A", "B", "C", "D", "E", "F", "A"],
+    "tabu_tenure": 3,
+    "max_iter": 10,
+    "metric": "euclidean",
+}
+
+
+TABU_TASK_FORMAT_HELP = '''TABU_TASK_DATA = {
+    "nodes": ["A", "B", "C", "D", "E", "F", "G"],
+    "distance_matrix": [
+        [0, 12, 10, 19, 8, 15, 11],
+        [12, 0, 3, 7, 2, 9, 14],
+        # ... sampai 7 baris
+    ],
+    # atau isi coords (opsional bila distance_matrix sudah ada):
+    "coords": None,   # [(x, y), ...]
+    "initial_route": ["A", "B", "C", "D", "E", "F", "G", "A"],
+    "tabu_tenure": 3,
+    "max_iter": 10,
+    "metric": "euclidean",
+}'''
+
+
+if "tabu_task_output" not in st.session_state:
+    st.session_state.tabu_task_output = None
+
+if "tabu_task_run_id" not in st.session_state:
+    st.session_state.tabu_task_run_id = 0
+
+
+def task_data_filled(data):
+
+    return bool(data.get("nodes")) and (
+        data.get("distance_matrix") is not None
+        or data.get("coords") is not None
+    )
+
+
+def prepare_task_data(data):
+    """
+    Ubah TABU_TASK_DATA menjadi (df, dist_matrix, initial_route).
+    Jika coords kosong, node diletakkan melingkar hanya untuk visualisasi.
+    """
+
+    nodes = [str(x) for x in data["nodes"]]
+
+    n = len(nodes)
+
+    if n < 3:
+        raise ValueError("Jumlah node minimal adalah 3.")
+
+    if len(set(nodes)) != n:
+        raise ValueError("Label node tidak boleh duplikat.")
+
+    # ---- koordinat (untuk visualisasi)
+    coords = data.get("coords")
+
+    if coords is not None:
+
+        if len(coords) != n:
+            raise ValueError(
+                "Jumlah coords harus sama dengan jumlah nodes."
+            )
+
+        xs = [float(c[0]) for c in coords]
+        ys = [float(c[1]) for c in coords]
+
+    else:
+
+        xs = [
+            round(50 + 40 * math.cos(2 * math.pi * i / n), 2)
+            for i in range(n)
+        ]
+
+        ys = [
+            round(50 + 40 * math.sin(2 * math.pi * i / n), 2)
+            for i in range(n)
+        ]
+
+    # ---- matriks jarak
+    matrix = data.get("distance_matrix")
+
+    if matrix is not None:
+
+        if len(matrix) != n or any(len(row) != n for row in matrix):
+            raise ValueError(
+                f"distance_matrix harus berukuran {n} x {n}."
+            )
+
+        dist = [[float(v) for v in row] for row in matrix]
+
+    else:
+
+        dist = build_distance_matrix(
+            list(zip(xs, ys)),
+            metric=data.get("metric", "euclidean")
+        )
+
+    df_task = pd.DataFrame({
+        "node": nodes,
+        "x": xs,
+        "y": ys
+    })
+
+    # ---- rute awal dari soal
+    route = None
+
+    if data.get("initial_route"):
+
+        position = {label: i for i, label in enumerate(nodes)}
+
+        try:
+
+            route = [position[str(x)] for x in data["initial_route"]]
+
+        except KeyError as error:
+
+            raise ValueError(
+                f"Node {error} pada initial_route tidak ada di nodes."
+            )
+
+        if len(route) == n:
+            route.append(route[0])
+
+        validate_tour(route, n, home=route[0])
+
+    return df_task, dist, route
+
+
+def render_hybrid_placeholder():
+
+    st.subheader(
+        "Hybrid"
+    )
+
+    st.info(
+        "Hybrid akan dibuat setelah Independent "
+        "sudah berjalan dengan baik."
+    )
+
+
+def render_tabu_task():
+
+    st.subheader("Tabu Search — Data Tugas")
+
+    st.caption(
+        "Tab khusus untuk data dari soal tugas. Tab ini tidak memakai "
+        "dataset pada bagian Input Data dan tidak terpengaruh sidebar. "
+        "Tabu Search yang dipakai sama dengan tab lainnya."
+    )
+
+    data = TABU_TASK_DATA
+
+    # ---------------- data belum diisi ----------------
+
+    if not task_data_filled(data):
+
+        st.info(
+            "Data tugas belum diisi. Isi `TABU_TASK_DATA` di app.py "
+            "(cari tulisan 'ISI DATA TUGAS')."
+        )
+
+        use_example = st.checkbox(
+            "Lihat tampilan dengan data contoh (dummy)",
+            key="tabutask_example"
+        )
+
+        if not use_example:
+
+            with st.expander("Contoh format TABU_TASK_DATA"):
+
+                st.code(TABU_TASK_FORMAT_HELP, language="python")
+
+            return
+
+        data = TABU_TASK_EXAMPLE
+
+        st.warning(
+            "Menampilkan data contoh (dummy), bukan data tugas."
+        )
+
+    # ---------------- siapkan data ----------------
+
+    try:
+
+        task_df, task_dist, task_route = prepare_task_data(data)
+
+    except Exception as error:
+
+        st.error(f"Data tugas tidak valid: {error}")
+
+        return
+
+    labels = task_df["node"].tolist()
+
+    with st.expander("Data tugas", expanded=False):
+
+        col_a, col_b = st.columns(2)
+
+        with col_a:
+
+            st.markdown("**Node & koordinat**")
+
+            st.dataframe(
+                task_df,
+                use_container_width=True,
+                hide_index=True
+            )
+
+        with col_b:
+
+            st.markdown("**Distance matrix**")
+
+            st.dataframe(
+                pd.DataFrame(task_dist, index=labels, columns=labels).round(2),
+                use_container_width=True
+            )
+
+        if data.get("coords") is None:
+
+            st.caption(
+                "Koordinat tidak diisi, sehingga node digambar melingkar "
+                "hanya untuk visualisasi (jarak tetap dari distance_matrix)."
+            )
+
+    # ---------------- pengaturan ----------------
+
+    st.markdown("#### Pengaturan")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+
+        source_options = (
+            ["Dari soal"] if task_route is not None else []
+        ) + ["Generate Random", "Manual"]
+
+        source = st.selectbox(
+            "Initial solution",
+            source_options,
+            key="tabutask_source"
+        )
+
+        initial_route = None
+
+        if source == "Dari soal":
+
+            initial_route = task_route
+
+        elif source == "Generate Random":
+
+            start_label = st.selectbox(
+                "Start Node",
+                labels,
+                key="tabutask_random_start"
+            )
+
+            seed = st.number_input(
+                "Seed",
+                min_value=0,
+                max_value=99999,
+                value=42,
+                step=1,
+                key="tabutask_seed"
+            )
+
+            initial_route = generate_initial_tour(
+                len(labels),
+                home=labels.index(start_label),
+                seed=int(seed)
+            )
+
+        else:
+
+            manual_start = st.selectbox(
+                "Route Start",
+                labels,
+                key="tabutask_manual_start"
+            )
+
+            remaining = [x for x in labels if x != manual_start]
+
+            order = st.multiselect(
+                "Node Order",
+                remaining,
+                key="tabutask_manual_order"
+            )
+
+            if len(order) == len(remaining):
+
+                initial_route = [
+                    labels.index(x)
+                    for x in [manual_start] + order + [manual_start]
+                ]
+
+        if initial_route is not None:
+
+            st.caption("Initial Route")
+
+            st.code(route_to_labels(task_df, initial_route))
+
+            st.caption(
+                f"Initial Distance: "
+                f"{tour_distance(initial_route, task_dist):.2f}"
+            )
+
+        else:
+
+            st.caption("Lengkapi Node Order untuk membentuk rute.")
+
+    with col2:
+
+        tabu_tenure = st.number_input(
+            "Tabu Tenure",
+            min_value=1,
+            max_value=100,
+            value=int(data.get("tabu_tenure", 3)),
+            step=1,
+            key="tabutask_tenure"
+        )
+
+        max_iter = st.number_input(
+            "Max Iteration",
+            min_value=1,
+            max_value=1000,
+            value=int(data.get("max_iter", 10)),
+            step=1,
+            key="tabutask_max_iter"
+        )
+
+        n_show = st.number_input(
+            "Jumlah iterasi yang diilustrasikan",
+            min_value=1,
+            max_value=100,
+            value=3,
+            step=1,
+            key="tabutask_show",
+            help="Tugas mewajibkan minimal 3 iterasi."
+        )
+
+    if st.button(
+        "▶ Run Tabu Search (Tugas)",
+        type="primary",
+        use_container_width=True,
+        disabled=initial_route is None,
+        key="tabutask_run"
+    ):
+
+        try:
+
+            st.session_state.tabu_task_run_id += 1
+
+            result = execute_independent_algorithm(
+                method="Tabu Search",
+                df=task_df,
+                dist_matrix=task_dist,
+                start_node=None,
+                initial_route=initial_route,
+                parameters={
+                    "max_iter": int(max_iter),
+                    "tabu_tenure": int(tabu_tenure),
+                    "verbose_history": True
+                }
+            )
+
+            st.session_state.tabu_task_output = {
+                "df": task_df,
+                "dist": task_dist,
+                "result": result,
+                "n_show": int(n_show),
+                "dummy": data is TABU_TASK_EXAMPLE
+            }
+
+        except Exception as error:
+
+            st.error(f"Tabu Search gagal dijalankan: {error}")
+
+
+    # ---------------- hasil ----------------
+
+    output = st.session_state.tabu_task_output
+
+    if output is None:
+        return
+
+    st.divider()
+
+    if output["dummy"]:
+
+        st.warning(
+            "Hasil di bawah memakai data contoh (dummy)."
+        )
+
+    out_df = output["df"]
+    out_dist = output["dist"]
+    out_result = output["result"]
+    out_labels = out_df["node"].astype(str).tolist()
+
+    render_independent_result(
+        out_df,
+        out_dist,
+        out_result,
+        0,
+        key_prefix="tabutask",
+        run_id=st.session_state.tabu_task_run_id
+    )
+
+    # ---------------- ilustrasi N iterasi pertama ----------------
+
+    history = out_result["history"] or []
+
+    # jumlah iterasi mengikuti isian terbaru (tanpa perlu Run ulang)
+    shown = min(int(n_show), len(history) - 1)
+
+    st.divider()
+
+    st.subheader(f"Ilustrasi Tabu Search — {shown} iterasi pertama")
+
+    st.caption(
+        "Setiap iterasi menampilkan current route, tabu list, seluruh "
+        "candidate move, selected move, new route, dan tabu list sesudahnya."
+    )
+
+    for k in range(1, shown + 1):
+
+        with st.expander(f"ITERATION {k}", expanded=True):
+
+            render_view(
+                build_iteration_view(
+                    "tabu",
+                    history,
+                    k,
+                    out_dist,
+                    out_labels
+                )
+            )
+
+    st.subheader("Hasil Akhir")
+
+    st.success(
+        f"Rute terbaik: {route_to_labels(out_df, out_result['route'])} "
+        f"— distance {out_result['final_distance']:.2f} "
+        f"(initial {out_result['initial_distance']:.2f})"
+    )
+
+
+# ============================================================
 # HEADER
 # ============================================================
 
 st.title("🧭 TSP Learning & Optimization")
 
 st.caption(
-    "Pelajari, jalankan, dan bandingkan algoritma "
+    "Media interaktif untuk membedah, menguji, dan membandingkan "
+    "berbagai metode heuristik dalam menyelesaikan "
     "Travelling Salesman Problem."
 )
 
@@ -2246,9 +3268,28 @@ if new_data is not None:
 
 if st.session_state.df is None:
 
-    st.info(
-        "Masukkan dataset terlebih dahulu."
-    )
+    st.divider()
+
+    tab_independent, tab_hybrid, tab_tabu_task = st.tabs([
+        "Independent",
+        "Hybrid",
+        "Tabu Search (Tugas)"
+    ])
+
+    with tab_independent:
+
+        st.info(
+            "Masukkan dataset terlebih dahulu."
+        )
+
+    with tab_hybrid:
+
+        render_hybrid_placeholder()
+
+    # Tab ini memakai data tugas sendiri, tidak butuh dataset di atas
+    with tab_tabu_task:
+
+        render_tabu_task()
 
     st.stop()
 
@@ -2351,9 +3392,10 @@ with st.expander(
 
 st.divider()
 
-tab_independent, tab_hybrid = st.tabs([
+tab_independent, tab_hybrid, tab_tabu_task = st.tabs([
     "Independent",
-    "Hybrid"
+    "Hybrid",
+    "Tabu Search (Tugas)"
 ])
 
 
@@ -2365,18 +3407,6 @@ with st.sidebar:
 
     st.header("Independent")
 
-    st.markdown(
-    """
-    <style>
-    div[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] hr {
-        margin-top: 0.45rem;
-        margin-bottom: 0.65rem;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
-    
     st.divider()
 
     # --------------------------------------------------------
@@ -2395,12 +3425,6 @@ with st.sidebar:
     initial_solutions = {}
     algorithm_parameters = {}
 
-    algorithms_with_parameters = [
-        method
-        for method in selected_algorithms
-        if ALGORITHMS[method]["parameters"]
-    ]
-
 
     if selected_algorithms:
 
@@ -2411,243 +3435,68 @@ with st.sidebar:
             "Parameters"
         ])
 
-        # Kartu dibuka otomatis jika algoritmanya sedikit
-        expand_cards = len(selected_algorithms) <= 2
 
+        # ====================================================
+        # TAB: INITIAL SOLUTION  (pilih algoritma → ubah)
+        # ====================================================
 
-        
-        # ====================================================
-        # INITIAL SOLUTION
-        # ====================================================
-        
-        initial_method = st.radio(
-            "Pilih algoritma:",
-            selected_algorithms,
-            horizontal=True,
-            key="active_initial_method"
-        )
-        
-        if initial_method:
-        
-            idx = selected_algorithms.index(initial_method)
-            method = initial_method
-            config = ALGORITHMS[method]
-        
-            # --------------------------------------------
-            # CONSTRUCTIVE → START NODE
-            # --------------------------------------------
-        
-            if config["needs_start_node"]:
-        
-                start_node_label = st.selectbox(
-                    "Start Node",
-                    df["node"].tolist(),
-                    key=f"independent_start_node_{method}",
-                    help=(
-                        "Digunakan oleh metode Constructive "
-                        "untuk menentukan node awal."
-                    )
-                )
-        
-                start_node = int(
-                    df.index[df["node"] == start_node_label][0]
-                )
-        
-                initial_solutions[method] = {
-                    "type": "start_node",
-                    "start_node": start_node
-                }
-        
-            # --------------------------------------------
-            # LOCAL SEARCH / METAHEURISTIC → INITIAL ROUTE
-            # --------------------------------------------
-        
-            elif config["needs_initial_route"]:
-        
-                previous_algorithms = [
-                    m
-                    for m in selected_algorithms[:idx]
-                    if ALGORITHMS[m]["needs_initial_route"]
-                ]
-        
-                reuse_options = ["Generate Random", "Manual"]
-        
-                if previous_algorithms:
-                    reuse_options.append(
-                        f"Sama dengan {previous_algorithms[-1]}"
-                    )
-        
-                route_type = st.selectbox(
-                    "Starting Route",
-                    reuse_options,
-                    key=f"independent_route_type_{method}",
-                    help=(
-                        "Local Search dan Metaheuristic "
-                        "membutuhkan satu rute sebagai solusi awal."
-                    )
-                )
-        
-                if route_type.startswith("Sama dengan"):
-        
-                    initial_solutions[method] = {
-                        "type": "same",
-                        "source": previous_algorithms[-1]
-                    }
-        
-                elif route_type == "Generate Random":
-        
-                    random_start_label = st.selectbox(
-                        "Start Node",
-                        df["node"].tolist(),
-                        key=f"independent_random_start_{method}"
-                    )
-        
-                    random_start = int(
-                        df.index[df["node"] == random_start_label][0]
-                    )
-        
-                    seed = st.number_input(
-                        "Seed",
-                        min_value=0,
-                        max_value=99999,
-                        value=42,
-                        step=1,
-                        key=f"independent_initial_seed_{method}"
-                    )
-        
-                    initial_solutions[method] = {
-                        "type": "route",
-                        "route": generate_initial_tour(
-                            len(df),
-                            home=random_start,
-                            seed=int(seed)
-                        )
-                    }
-        
-                elif route_type == "Manual":
-        
-                    route_start = st.selectbox(
-                        "Route Start",
-                        df["node"].tolist(),
-                        key=f"independent_route_start_{method}"
-                    )
-        
-                    route_start_index = int(
-                        df.index[df["node"] == route_start][0]
-                    )
-        
-                    remaining_nodes = [
-                        node
-                        for node in df["node"].tolist()
-                        if node != route_start
-                    ]
-        
-                    route_order = st.multiselect(
-                        "Node Order",
-                        remaining_nodes,
-                        key=f"independent_route_order_{method}"
-                    )
-        
-                    if len(route_order) == len(remaining_nodes):
-        
-                        route = [route_start_index]
-        
-                        for node in route_order:
-                            route.append(
-                                int(df.index[df["node"] == node][0])
-                            )
-        
-                        route.append(route_start_index)
-        
-                        initial_solutions[method] = {
-                            "type": "route",
-                            "route": route
-                        }
-        
-                        st.caption("Final Initial Route")
-        
-                        st.code(
-                            " → ".join(
-                                str(df.iloc[i]["node"])
-                                for i in route
-                            )
-                        )
-        
-                    else:
-                        st.caption(
-                            "Pilih seluruh node untuk membentuk rute."
-                        )
-        
-                
-        # ====================================================
-        # PARAMETERS
-        # ====================================================
-        
-        st.divider()
-        st.subheader("Parameters")
-        
-        algorithms_with_parameters = [
-            method
-            for method in selected_algorithms
-            if ALGORITHMS[method]["parameters"]
-        ]
-        
-        if algorithms_with_parameters:
-        
-            parameter_method = st.radio(
+        with tab_initial:
+
+            active_initial = st.radio(
                 "Pilih algoritma:",
-                algorithms_with_parameters,
+                selected_algorithms,
                 horizontal=True,
-                key="active_parameter_method"
+                key="independent_active_initial"
             )
-        
-            algorithm_parameters[parameter_method] = {}
-        
-            for parameter, config in (
-                ALGORITHMS[parameter_method]["parameters"].items()
-            ):
-        
-                label = parameter.replace("_", " ").title()
-        
-                widget_key = (
-                    f"independent_{parameter_method}_{parameter}"
+
+            render_initial_panel(
+                active_initial,
+                selected_algorithms,
+                df
+            )
+
+
+        # ====================================================
+        # TAB: PARAMETERS  (pilih algoritma → ubah)
+        # ====================================================
+
+        with tab_parameters:
+
+            methods_with_parameters = [
+                method
+                for method in selected_algorithms
+                if ALGORITHMS[method]["parameters"]
+            ]
+
+            if not methods_with_parameters:
+
+                st.caption(
+                    "Algoritma yang dipilih tidak memiliki parameter."
                 )
-        
-                if config["type"] in ("int", "float"):
-        
-                    value = st.number_input(
-                        label,
-                        min_value=config["min"],
-                        max_value=config["max"],
-                        value=config["default"],
-                        step=config["step"],
-                        key=widget_key,
-                        help=config["help"]
-                    )
-        
-                elif config["type"] == "select":
-        
-                    value = st.selectbox(
-                        label,
-                        config["options"],
-                        index=config["options"].index(config["default"]),
-                        key=widget_key,
-                        help=config["help"]
-                    )
-        
-                elif config["type"] == "bool":
-        
-                    value = st.checkbox(
-                        label,
-                        value=config["default"],
-                        key=widget_key,
-                        help=config["help"]
-                    )
-        
-                algorithm_parameters[parameter_method][parameter] = value
-        
-        else:
-            st.caption("Algoritma yang dipilih tidak memiliki parameter.")
+
+            else:
+
+                active_parameters = st.radio(
+                    "Pilih algoritma:",
+                    methods_with_parameters,
+                    horizontal=True,
+                    key="independent_active_parameters"
+                )
+
+                render_parameter_panel(active_parameters)
+
+
+        # Pengaturan SEMUA algoritma terpilih dibaca dari
+        # penyimpanan (bukan hanya yang sedang tampil).
+        initial_solutions = build_initial_solutions(
+            selected_algorithms,
+            df
+        )
+
+        algorithm_parameters = build_algorithm_parameters(
+            selected_algorithms
+        )
+
 
     # --------------------------------------------------------
     # RUN
@@ -2757,6 +3606,11 @@ with tab_independent:
                     start_node=start_node,
                     initial_route=initial_route,
                     parameters=parameters
+                )
+
+                result["start_note"] = start_note_of(
+                    method,
+                    initial_solutions
                 )
 
                 results.append(
@@ -2896,7 +3750,7 @@ with tab_independent:
                     comparison_df
                 ),
                 use_container_width=True,
-                    key="independent_cmp_improvement"
+                key="independent_cmp_improvement"
             )
 
 
@@ -2906,11 +3760,13 @@ with tab_independent:
 
 with tab_hybrid:
 
-    st.subheader(
-        "Hybrid"
-    )
+    render_hybrid_placeholder()
 
-    st.info(
-        "Hybrid akan dibuat setelah Independent "
-        "sudah berjalan dengan baik."
-    )
+
+# ============================================================
+# TABU SEARCH (DATA TUGAS)
+# ============================================================
+
+with tab_tabu_task:
+
+    render_tabu_task()
