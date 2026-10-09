@@ -1911,7 +1911,7 @@ def run_algorithm(
 
         return simulated_annealing(
             dist_matrix,
-            initial_tour=initial_route,
+            initial_route=initial_route,
             initial_temp=parameters.get(
                 "initial_temp",
                 1000.0
