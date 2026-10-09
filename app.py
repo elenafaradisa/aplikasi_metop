@@ -1931,10 +1931,6 @@ def run_algorithm(
             seed=parameters.get(
                 "seed",
                 42
-            ),
-            verbose_history=parameters.get(
-                "verbose_history",
-                False
             )
         )
 
