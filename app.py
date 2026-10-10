@@ -553,10 +553,11 @@ def attr_text(attr, labels):
 
 
 def _attr_of_move(route, i, j):
+    """Atribut tabu = edge yang DITAMBAHKAN move (disimpan ke tabu list)."""
 
-    removed, _, _ = two_opt_move(route, i, j)
+    _, added, _ = two_opt_move(route, i, j)
 
-    return frozenset(frozenset(edge) for edge in removed)
+    return frozenset(frozenset(edge) for edge in added)
 
 
 # Blok tampilan -------------------------------------------------
@@ -964,10 +965,10 @@ def _tabu_list_table(tabu_list, labels, k, new_attr=None):
     for attr, expiry in (tabu_list or {}).items():
 
         rows.append({
-            "Edge yang dibuang (masuk tabu list)": attr_text(attr, labels),
+            "Edge baru yang dilarang dibongkar": attr_text(attr, labels),
             "Tabu sampai iterasi": int(expiry),
             "Status": (
-                "baru ditambahkan" if (new_attr is not None and attr == new_attr)
+                "baru masuk" if (new_attr is not None and attr == new_attr)
                 else ("aktif" if expiry >= k else "kadaluarsa")
             ),
         })
@@ -1022,7 +1023,7 @@ def _tabu_view(history, k, dist, labels):
         blocks.append(_table(
             "Tabu List (aktif pada iterasi ini)",
             _tabu_list_table(active, L, k),
-            "Move yang melanggar larangan ini tidak boleh dipilih, kecuali "
+            "Move yang membongkar (membuang) edge ini ditolak, kecuali "
             "memenuhi aspiration criterion (jarak < aspiration level).",
         ))
 
@@ -1123,7 +1124,7 @@ def _tabu_view(history, k, dist, labels):
         blocks.append(_table(
             "Tabu List sesudah iterasi",
             _tabu_list_table(cur.get("tabu_list"), L, k + 1, new_attr),
-            "Move yang baru dipilih masuk tabu list selama tabu tenure.",
+            "Edge baru yang terbentuk oleh move ini masuk tabu list selama tabu tenure.",
         ))
 
     return {
@@ -1661,10 +1662,11 @@ ALGORITHM_EXPLANATIONS = {
     "Tabu Search":
         "Tabu Search mengevaluasi seluruh kandidat move 2-opt pada tiap "
         "iterasi, lalu memilih yang terbaik di antara yang tidak tabu "
-        "(walau lebih buruk dari rute sekarang). Move yang baru dipakai "
-        "masuk tabu list selama tabu tenure agar tidak berputar balik; "
-        "move tabu tetap boleh dipilih bila lebih baik dari rute terbaik "
-        "(aspiration criterion).",
+        "(walau lebih buruk dari rute sekarang). Edge baru yang terbentuk "
+        "dari move terpilih dimasukkan ke tabu list selama tabu tenure, "
+        "sehingga move yang membongkarnya (undo) ditolak agar tidak "
+        "berputar balik; move tabu tetap boleh dipilih bila lebih baik "
+        "dari rute terbaik (aspiration criterion).",
 }
 
 
