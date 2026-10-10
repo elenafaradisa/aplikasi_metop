@@ -60,6 +60,19 @@ st.set_page_config(
     layout="wide"
 )
 
+# Spasi sidebar: garis di bawah judul lebih dekat ke judul
+st.markdown(
+    """
+    <style>
+    .st-key-sidebar_title { gap: 0.15rem !important; }
+    .st-key-sidebar_title hr { margin: 0.15rem 0 0.35rem 0 !important; }
+    .st-key-sidebar_title h2 { padding: 0 0 0.15rem 0 !important; }
+    [data-testid="stSidebar"] hr { margin: 0.6rem 0 !important; }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 
 # ============================================================
 # ALGORITHM CONFIGURATION
@@ -1203,6 +1216,189 @@ def _sa_view(history, k, dist, labels):
 
 
 # ============================================================
+# LOCAL SEARCH (2-opt, 3-opt)
+# ============================================================
+
+def _local_edge_rows(move, labels):
+
+    rows = []
+
+    for item in move.get("removed_edges", []):
+
+        a, b = item["edge"]
+
+        rows.append({
+            "Keterangan": "Dibuang",
+            "Edge": _edge(a, b, labels),
+            "Jarak": _f(item["distance"]),
+        })
+
+    for item in move.get("added_edges", []):
+
+        a, b = item["edge"]
+
+        rows.append({
+            "Keterangan": "Ditambah",
+            "Edge": _edge(a, b, labels),
+            "Jarak": _f(item["distance"]),
+        })
+
+    return pd.DataFrame(rows)
+
+
+def _local_view(history, k, labels, strategy=None):
+
+    L = labels
+
+    item = history[k]
+
+    move = item.get("move")
+
+    # ---------------- iterasi 0: rute awal ----------------
+
+    if k == 0 or not move:
+
+        return {
+            "summary": _summary(k, history, L),
+            "blocks": [_text(
+                "Iterasi 0 adalah **rute awal (initial route)**. "
+                "Belum ada move yang diterapkan; pencarian dimulai "
+                "dari rute ini."
+            )],
+        }
+
+    prev = history[k - 1]
+
+    removed = move.get("removed_edges", [])
+    added = move.get("added_edges", [])
+
+    positions = move.get("positions", {})
+
+    before = move.get("distance_before", prev.get("distance"))
+    after = move.get("distance_after", item.get("distance"))
+
+    blocks = []
+
+    # ---------------- kondisi awal ----------------
+
+    blocks.append(_lines("Kondisi awal iterasi", [
+        ("Current Route", route_text(_route_of(prev), L)),
+        ("Current Distance", _f(before)),
+    ]))
+
+    # ---------------- move terpilih ----------------
+
+    pairs = [
+        ("Jenis move", str(move.get("type", "-"))),
+        (
+            "Posisi pada rute",
+            ", ".join(f"{key} = {value}" for key, value in positions.items())
+            + " (urutan dimulai dari 0)",
+        ),
+    ]
+
+    if "reversed_segment" in move:
+
+        segment = list(move["reversed_segment"])
+
+        pairs.append((
+            "Segmen yang dibalik",
+            f"{route_text(segment, L)}  →  {route_text(segment[::-1], L)}",
+        ))
+
+    if "reconnection" in move:
+
+        pairs.append((
+            "Penyambungan ulang",
+            f"{move['reconnection']} (variant {move.get('variant')})",
+        ))
+
+        for name, segment in (move.get("segments") or {}).items():
+
+            pairs.append((f"Segmen {name}", route_text(list(segment), L)))
+
+    blocks.append(_lines("Move yang dipilih", pairs))
+
+    if "reconnection" in move:
+
+        blocks.append(_text(
+            "_Keterangan: A, B, C, D adalah potongan rute; "
+            "tanda ' berarti potongan itu dibalik urutannya._"
+        ))
+
+    # ---------------- edge ----------------
+
+    blocks.append(_table(
+        "Edge yang dibuang dan ditambahkan",
+        _local_edge_rows(move, L),
+    ))
+
+    # ---------------- perhitungan ----------------
+
+    removed_cost = move.get("removed_cost")
+    added_cost = move.get("added_cost")
+    delta = move.get("delta")
+
+    blocks.append(_lines("Perhitungan", [
+        (
+            "Total jarak edge dibuang",
+            " + ".join(_f(e["distance"]) for e in removed)
+            + f" = {_f(removed_cost)}",
+        ),
+        (
+            "Total jarak edge ditambah",
+            " + ".join(_f(e["distance"]) for e in added)
+            + f" = {_f(added_cost)}",
+        ),
+        (
+            "Δ = ditambah − dibuang",
+            f"{_f(added_cost)} − {_f(removed_cost)} = {_signed(delta)}",
+        ),
+    ]))
+
+    # ---------------- hasil ----------------
+
+    if strategy == "best":
+
+        reason = (
+            "Δ negatif (rute lebih pendek). Strategy best: dipilih move "
+            "dengan perbaikan terbesar dari semua kemungkinan move."
+        )
+
+    elif strategy == "first":
+
+        reason = (
+            "Δ negatif (rute lebih pendek). Strategy first: dipilih move "
+            "pertama yang ditemukan dan memperbaiki rute."
+        )
+
+    else:
+
+        reason = "Δ negatif, sehingga rute menjadi lebih pendek."
+
+    blocks.append(_lines("Hasil iterasi", [
+        ("New Route", route_text(_route_of(item), L)),
+        ("Distance sebelum", _f(before)),
+        ("Distance sesudah", _f(after)),
+        ("Δ Distance", _signed(None if before is None or after is None else after - before)),
+        ("Alasan diterima", reason),
+    ]))
+
+    if k == len(history) - 1:
+
+        blocks.append(_text(
+            "Ini iterasi terakhir. Pencarian berhenti karena tidak ada "
+            "move yang memperbaiki rute lagi (local optimum) atau karena "
+            "batas **max_iter** tercapai."
+        ))
+
+    return {
+        "summary": _summary(k, history, L),
+        "blocks": blocks,
+    }
+
+
+# ============================================================
 # GENERIC (2-opt / 3-opt / lainnya)
 # ============================================================
 
@@ -1240,7 +1436,7 @@ def _generic_view(history, k, labels):
 # PUBLIC: DETAIL SATU ITERASI
 # ============================================================
 
-def build_iteration_view(kind, history, k, dist, labels):
+def build_iteration_view(kind, history, k, dist, labels, strategy=None):
     """
     Detail perhitungan iterasi ke-k.
 
@@ -1264,6 +1460,9 @@ def build_iteration_view(kind, history, k, dist, labels):
 
         if kind in ("nn", "ni", "fi", "ai") and _route_of(item) is not None:
             return _constructive_view(kind, history, k, dist, labels)
+
+        if kind == "local":
+            return _local_view(history, k, labels, strategy)
 
         if kind == "tabu":
             return _tabu_view(history, k, dist, labels)
@@ -1339,6 +1538,24 @@ def build_iteration_table(kind, history, dist, labels):
                         f"{labels[d['after']]} dan {labels[d['before']]}"
                     )
                     row["Tambahan jarak"] = _f(d["increase"])
+
+            elif kind == "local":
+
+                mv = item.get("move")
+
+                if mv:
+
+                    removed = [e["edge"] for e in mv.get("removed_edges", [])]
+                    added = [e["edge"] for e in mv.get("added_edges", [])]
+
+                    row["Move"] = (
+                        f"{_edges(removed, labels)} → {_edges(added, labels)}"
+                    )
+
+                    if mv.get("reconnection"):
+                        row["Penyambungan"] = mv["reconnection"]
+
+                    row["Δ"] = _signed(mv.get("delta"))
 
             elif kind == "tabu":
 
@@ -1845,7 +2062,8 @@ def render_independent_result(
                     history,
                     selected,
                     dist_matrix,
-                    labels
+                    labels,
+                    strategy=(result.get("parameters") or {}).get("strategy")
                 )
             )
 
@@ -2064,7 +2282,8 @@ def execute_independent_algorithm(
         "execution_time": execution_time,
         "history": normalize_history(
             extract_history(result)
-        )
+        ),
+        "parameters": dict(parameters or {})
     }
 
 
@@ -2080,40 +2299,43 @@ def execute_independent_algorithm(
 
 RANDOM_NODE = "🎲 Random"
 
-if "independent_cfg" not in st.session_state:
-    st.session_state.independent_cfg = {}
+for _namespace in ("independent", "hybrid"):
+
+    if f"{_namespace}_cfg" not in st.session_state:
+        st.session_state[f"{_namespace}_cfg"] = {}
 
 
-def cfg_get(method, name, default=None):
+def _cfg_store(ns):
 
-    return (
-        st.session_state.independent_cfg
-        .get(method, {})
-        .get(name, default)
-    )
+    return st.session_state.setdefault(f"{ns}_cfg", {})
 
 
-def cfg_set(method, name, value):
+def cfg_get(method, name, default=None, ns="independent"):
 
-    st.session_state.independent_cfg.setdefault(
-        method,
-        {}
-    )[name] = value
+    return _cfg_store(ns).get(method, {}).get(name, default)
+
+
+def cfg_set(method, name, value, ns="independent"):
+
+    _cfg_store(ns).setdefault(method, {})[name] = value
 
     return value
 
 
-def _cfg_key(method, name):
+def _cfg_key(method, name, ns="independent"):
 
-    return f"independent_cfg_{method}_{name}"
+    return f"{ns}_cfg_{method}_{name}"
 
 
-def cfg_selectbox(method, name, label, options, default=None, **kwargs):
+def cfg_selectbox(
+    method, name, label, options, default=None, ns="independent", **kwargs
+):
 
     stored = cfg_get(
         method,
         name,
-        options[0] if default is None else default
+        options[0] if default is None else default,
+        ns
     )
 
     index = options.index(stored) if stored in options else 0
@@ -2122,42 +2344,42 @@ def cfg_selectbox(method, name, label, options, default=None, **kwargs):
         label,
         options,
         index=index,
-        key=_cfg_key(method, name),
+        key=_cfg_key(method, name, ns),
         **kwargs
     )
 
-    return cfg_set(method, name, value)
+    return cfg_set(method, name, value, ns)
 
 
-def cfg_number(method, name, label, default, **kwargs):
+def cfg_number(method, name, label, default, ns="independent", **kwargs):
 
     value = st.number_input(
         label,
-        value=cfg_get(method, name, default),
-        key=_cfg_key(method, name),
+        value=cfg_get(method, name, default, ns),
+        key=_cfg_key(method, name, ns),
         **kwargs
     )
 
-    return cfg_set(method, name, value)
+    return cfg_set(method, name, value, ns)
 
 
-def cfg_checkbox(method, name, label, default, **kwargs):
+def cfg_checkbox(method, name, label, default, ns="independent", **kwargs):
 
     value = st.checkbox(
         label,
-        value=cfg_get(method, name, default),
-        key=_cfg_key(method, name),
+        value=cfg_get(method, name, default, ns),
+        key=_cfg_key(method, name, ns),
         **kwargs
     )
 
-    return cfg_set(method, name, value)
+    return cfg_set(method, name, value, ns)
 
 
-def cfg_multiselect(method, name, label, options, **kwargs):
+def cfg_multiselect(method, name, label, options, ns="independent", **kwargs):
 
     stored = [
         v
-        for v in cfg_get(method, name, [])
+        for v in cfg_get(method, name, [], ns)
         if v in options
     ]
 
@@ -2165,11 +2387,11 @@ def cfg_multiselect(method, name, label, options, **kwargs):
         label,
         options,
         default=stored,
-        key=_cfg_key(method, name),
+        key=_cfg_key(method, name, ns),
         **kwargs
     )
 
-    return cfg_set(method, name, value)
+    return cfg_set(method, name, value, ns)
 
 
 def pick_random_node(n_nodes, seed):
@@ -2359,7 +2581,7 @@ def render_initial_panel(method, selected_algorithms, df):
 # PANEL: PARAMETER (satu algoritma)
 # ------------------------------------------------------------
 
-def render_parameter_panel(method):
+def render_parameter_panel(method, ns="independent"):
 
     for parameter, config in ALGORITHMS[method]["parameters"].items():
 
@@ -2374,6 +2596,7 @@ def render_parameter_panel(method):
                 name,
                 label,
                 int(config["default"]),
+                ns=ns,
                 min_value=int(config["min"]),
                 max_value=int(config["max"]),
                 step=int(config["step"]),
@@ -2387,6 +2610,7 @@ def render_parameter_panel(method):
                 name,
                 label,
                 float(config["default"]),
+                ns=ns,
                 min_value=float(config["min"]),
                 max_value=float(config["max"]),
                 step=float(config["step"]),
@@ -2401,6 +2625,7 @@ def render_parameter_panel(method):
                 label,
                 config["options"],
                 default=config["default"],
+                ns=ns,
                 help=config["help"]
             )
 
@@ -2411,6 +2636,7 @@ def render_parameter_panel(method):
                 name,
                 label,
                 config["default"],
+                ns=ns,
                 help=config["help"]
             )
 
@@ -2542,7 +2768,7 @@ def build_initial_solutions(selected_algorithms, df):
     return solutions
 
 
-def build_algorithm_parameters(selected_algorithms):
+def build_algorithm_parameters(selected_algorithms, ns="independent"):
 
     parameters = {}
 
@@ -2557,7 +2783,8 @@ def build_algorithm_parameters(selected_algorithms):
             parameter: cfg_get(
                 method,
                 f"param_{parameter}",
-                settings["default"]
+                settings["default"],
+                ns
             )
             for parameter, settings in config.items()
         }
@@ -2761,8 +2988,7 @@ def render_hybrid_placeholder():
     )
 
     st.info(
-        "Hybrid akan dibuat setelah Independent "
-        "sudah berjalan dengan baik."
+        "Masukkan dataset terlebih dahulu untuk menggunakan Hybrid."
     )
 
 
@@ -3072,6 +3298,444 @@ def render_tabu_task():
 
 
 # ============================================================
+# HYBRID
+# ============================================================
+#
+# Tahap 1: metode Constructive membangun initial solution.
+# Tahap 2: metode Optimization (Local Search / Metaheuristic)
+#          memperbaiki rute dari tahap 1.
+
+if "hybrid_results" not in st.session_state:
+    st.session_state.hybrid_results = []
+
+if "hybrid_run_id" not in st.session_state:
+    st.session_state.hybrid_run_id = 0
+
+
+HYBRID_MAX_COMBINATIONS = 12
+
+
+def render_hybrid_result(df, dist_matrix, combo, index, run_id):
+    """Hasil satu kombinasi: ringkasan, rute awal vs akhir, lalu tiap tahap."""
+
+    stage1 = combo["stage1"]
+    stage2 = combo["stage2"]
+
+    start_label = str(df.iloc[int(stage1["route"][0])]["node"])
+
+    gain = (
+        (combo["initial_distance"] - combo["final_distance"])
+        / combo["initial_distance"] * 100
+        if combo["initial_distance"]
+        else 0.0
+    )
+
+    st.info(
+        f"Alur: Start Node **{start_label}** → "
+        f"**{stage1['method']}** (distance {stage1['final_distance']:.2f}) → "
+        f"**{stage2['method']}** (distance {stage2['final_distance']:.2f})"
+    )
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    col1.metric("Initial (Constructive)", f"{combo['initial_distance']:.2f}")
+    col2.metric("Final (Hybrid)", f"{combo['final_distance']:.2f}")
+    col3.metric("Improvement", f"{gain:.2f}%")
+    col4.metric("Total Execution Time", f"{combo['execution_time'] * 1000:.3f} ms")
+
+    initial_fig, final_fig = plot_route_comparison(
+        df,
+        stage1["route"],
+        stage2["route"],
+        home=stage1["route"][0],
+        initial_title=f"Initial — {stage1['method']}",
+        final_title=f"Final — {combo['label']}"
+    )
+
+    col_a, col_b = st.columns(2)
+
+    with col_a:
+
+        st.plotly_chart(
+            initial_fig,
+            use_container_width=True,
+            key=f"hybrid_{run_id}_{index}_cmp_initial"
+        )
+
+    with col_b:
+
+        st.plotly_chart(
+            final_fig,
+            use_container_width=True,
+            key=f"hybrid_{run_id}_{index}_cmp_final"
+        )
+
+    st.divider()
+
+    st.markdown("### Tahap 1 — Initial Solution")
+
+    render_independent_result(
+        df,
+        dist_matrix,
+        stage1,
+        index,
+        key_prefix=f"hybrid_{index}_s1",
+        run_id=run_id
+    )
+
+    st.divider()
+
+    st.markdown("### Tahap 2 — Optimization")
+
+    render_independent_result(
+        df,
+        dist_matrix,
+        stage2,
+        index,
+        key_prefix=f"hybrid_{index}_s2",
+        run_id=run_id
+    )
+
+
+def render_hybrid(df, dist_matrix):
+
+    st.subheader("Hybrid")
+
+    st.caption(
+        "Gabungkan metode Constructive (membangun initial solution) dengan "
+        "metode Optimization (memperbaikinya). Rute hasil tahap 1 menjadi "
+        "initial route tahap 2."
+    )
+
+    labels = df["node"].tolist()
+
+    constructive_methods = [
+        m for m, c in ALGORITHMS.items()
+        if c["type"] == "Constructive"
+    ]
+
+    optimizer_methods = [
+        m for m, c in ALGORITHMS.items()
+        if c["type"] != "Constructive"
+    ]
+
+
+    # ---------------- 1. kombinasi ----------------
+
+    st.markdown("#### 1. Pilih Kombinasi")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+
+        inits = st.multiselect(
+            "Initial Solution (Constructive)",
+            constructive_methods,
+            key="hybrid_inits"
+        )
+
+    with col2:
+
+        optimizers = st.multiselect(
+            "Optimization",
+            optimizer_methods,
+            key="hybrid_optimizers"
+        )
+
+    pairs = [(i, o) for i in inits for o in optimizers]
+
+    pair_labels = [f"{i} → {o}" for i, o in pairs]
+
+    chosen_pairs = []
+
+    if pairs:
+
+        chosen_labels = st.multiselect(
+            "Kombinasi yang dijalankan",
+            pair_labels,
+            default=pair_labels,
+            key="hybrid_combinations",
+            help="Hapus kombinasi yang tidak ingin dijalankan."
+        )
+
+        chosen_pairs = [
+            pair
+            for pair, label in zip(pairs, pair_labels)
+            if label in chosen_labels
+        ]
+
+        if len(chosen_pairs) > HYBRID_MAX_COMBINATIONS:
+
+            st.warning(
+                f"Maksimal {HYBRID_MAX_COMBINATIONS} kombinasi sekaligus. "
+                "Kurangi pilihan kombinasi."
+            )
+
+            chosen_pairs = []
+
+    else:
+
+        st.caption(
+            "Pilih minimal satu Initial Solution dan satu Optimization."
+        )
+
+
+    # ---------------- 2. start node + parameter ----------------
+
+    col_start, col_params = st.columns(2)
+
+    with col_start:
+
+        st.markdown("#### 2. Start Node")
+
+        start_choice = st.selectbox(
+            "Start Node",
+            labels + [RANDOM_NODE],
+            key="hybrid_start_choice",
+            help="Node awal yang dipakai metode Constructive."
+        )
+
+        if start_choice == RANDOM_NODE:
+
+            start_seed = st.number_input(
+                "Seed (Random)",
+                min_value=0,
+                max_value=99999,
+                value=42,
+                step=1,
+                key="hybrid_start_seed"
+            )
+
+            start = pick_random_node(len(df), start_seed)
+
+            start_note = f"dipilih acak (seed {int(start_seed)})"
+
+            st.caption(f"Start node = **{labels[start]}**.")
+
+        else:
+
+            start = labels.index(start_choice)
+
+            start_note = None
+
+    involved = list(dict.fromkeys(inits + optimizers))
+
+    methods_with_parameters = [
+        m for m in involved
+        if ALGORITHMS[m]["parameters"]
+    ]
+
+    with col_params:
+
+        st.markdown("#### 3. Parameters")
+
+        if not methods_with_parameters:
+
+            st.caption(
+                "Algoritma yang dipilih tidak memiliki parameter."
+            )
+
+        else:
+
+            active_method = st.radio(
+                "Pilih algoritma:",
+                methods_with_parameters,
+                horizontal=True,
+                key="hybrid_active_parameters"
+            )
+
+            render_parameter_panel(active_method, ns="hybrid")
+
+
+    # ---------------- run ----------------
+
+    if st.button(
+        "▶ Run Hybrid",
+        type="primary",
+        use_container_width=True,
+        disabled=not chosen_pairs,
+        key="hybrid_run_button"
+    ):
+
+        st.session_state.hybrid_run_id += 1
+
+        parameters_all = build_algorithm_parameters(involved, ns="hybrid")
+
+        def _parameters_of(method):
+
+            parameters = dict(parameters_all.get(method, {}))
+
+            if (
+                "verbose_history" in ALGORITHMS[method]["parameters"]
+                and len(df) <= DETAIL_NODE_LIMIT
+            ):
+
+                parameters["verbose_history"] = True
+
+            return parameters
+
+        results = []
+
+        for init_method, opt_method in chosen_pairs:
+
+            label = f"{init_method} → {opt_method}"
+
+            try:
+
+                stage1 = execute_independent_algorithm(
+                    method=init_method,
+                    df=df,
+                    dist_matrix=dist_matrix,
+                    start_node=start,
+                    initial_route=None,
+                    parameters=_parameters_of(init_method)
+                )
+
+                stage1["start_note"] = start_note
+
+                stage2 = execute_independent_algorithm(
+                    method=opt_method,
+                    df=df,
+                    dist_matrix=dist_matrix,
+                    start_node=None,
+                    initial_route=stage1["route"],
+                    parameters=_parameters_of(opt_method)
+                )
+
+                results.append({
+                    "label": label,
+                    "method": label,
+                    "stage1": stage1,
+                    "stage2": stage2,
+                    "initial_distance": stage1["final_distance"],
+                    "final_distance": stage2["final_distance"],
+                    "execution_time": (
+                        stage1["execution_time"]
+                        + stage2["execution_time"]
+                    ),
+                    "route": stage2["route"]
+                })
+
+            except Exception as error:
+
+                st.error(f"{label} gagal dijalankan: {error}")
+
+        st.session_state.hybrid_results = results
+
+
+    # ---------------- results ----------------
+
+    results = st.session_state.hybrid_results
+
+    if not results:
+        return
+
+    run_id = st.session_state.hybrid_run_id
+
+    st.divider()
+
+    st.subheader("Results")
+
+    result_tabs = st.tabs([r["label"] for r in results])
+
+    for i, (result_tab, combo) in enumerate(zip(result_tabs, results)):
+
+        with result_tab:
+
+            render_hybrid_result(df, dist_matrix, combo, i, run_id)
+
+
+    # ---------------- comparison ----------------
+
+    if len(results) >= 2:
+
+        # Pembanding: hasil Constructive saja (tanpa optimasi)
+        baselines = {}
+
+        for r in results:
+
+            s1 = r["stage1"]
+
+            baselines.setdefault(s1["method"], {
+                "method": f"{s1['method']} (tanpa optimasi)",
+                "initial_distance": None,
+                "final_distance": s1["final_distance"],
+                "execution_time": s1["execution_time"]
+            })
+
+        entries = list(results) + list(baselines.values())
+
+        st.divider()
+
+        st.subheader("Comparison")
+
+        st.caption(
+            "Hybrid dibandingkan satu sama lain dan dengan hasil "
+            "Constructive saja (tanpa optimasi)."
+        )
+
+        comparison_df = sort_by_distance(
+            create_comparison_table(entries)
+        )
+
+        st.dataframe(
+            comparison_df,
+            use_container_width=True,
+            hide_index=True
+        )
+
+        col_best, col_fast = st.columns(2)
+
+        best = get_best_distance(comparison_df)
+
+        fastest = get_fastest_method(comparison_df)
+
+        with col_best:
+
+            if best is not None:
+
+                st.metric(
+                    "Best Distance",
+                    best["Method"],
+                    f"{best['Final Distance']:.2f}"
+                )
+
+        with col_fast:
+
+            if fastest is not None:
+
+                st.metric(
+                    "Fastest",
+                    fastest["Method"],
+                    f"{fastest['Execution Time (ms)']:.3f} ms"
+                )
+
+        col_c, col_d = st.columns(2)
+
+        with col_c:
+
+            st.plotly_chart(
+                plot_distance_comparison(comparison_df),
+                use_container_width=True,
+                key=f"hybrid_{run_id}_cmp_distance"
+            )
+
+        with col_d:
+
+            st.plotly_chart(
+                plot_time_comparison(comparison_df),
+                use_container_width=True,
+                key=f"hybrid_{run_id}_cmp_time"
+            )
+
+        st.plotly_chart(
+            plot_improvement_comparison(comparison_df),
+            use_container_width=True,
+            key=f"hybrid_{run_id}_cmp_improvement"
+        )
+
+
+# ============================================================
 # HEADER
 # ============================================================
 
@@ -3250,6 +3914,7 @@ if new_data is not None:
         )
 
         st.session_state.independent_results = []
+        st.session_state.hybrid_results = []
 
         st.success(
             "Dataset berhasil digunakan."
@@ -3405,9 +4070,17 @@ tab_independent, tab_hybrid, tab_tabu_task = st.tabs([
 
 with st.sidebar:
 
-    st.header("Independent")
+    # Judul + garis dalam satu wadah agar jaraknya rapat
+    try:
+        title_box = st.container(key="sidebar_title")
+    except TypeError:          # Streamlit versi lama (tanpa parameter key)
+        title_box = st.container()
 
-    st.divider()
+    with title_box:
+
+        st.header("Independent")
+
+        st.divider()
 
     # --------------------------------------------------------
     # ALGORITHM
@@ -3428,62 +4101,58 @@ with st.sidebar:
 
     if selected_algorithms:
 
+        # ====================================================
+        # INITIAL SOLUTION  (pilih algoritma → ubah)
+        # ====================================================
+
         st.divider()
 
-        tab_initial, tab_parameters = st.tabs([
-            "Initial Solution",
-            "Parameters"
-        ])
+        st.subheader("Initial Solution")
+
+        active_initial = st.radio(
+            "Pilih algoritma:",
+            selected_algorithms,
+            horizontal=True,
+            key="independent_active_initial"
+        )
+
+        render_initial_panel(
+            active_initial,
+            selected_algorithms,
+            df
+        )
 
 
         # ====================================================
-        # TAB: INITIAL SOLUTION  (pilih algoritma → ubah)
+        # PARAMETERS  (pilih algoritma → ubah)
         # ====================================================
 
-        with tab_initial:
+        st.divider()
 
-            active_initial = st.radio(
+        st.subheader("Parameters")
+
+        methods_with_parameters = [
+            method
+            for method in selected_algorithms
+            if ALGORITHMS[method]["parameters"]
+        ]
+
+        if not methods_with_parameters:
+
+            st.caption(
+                "Algoritma yang dipilih tidak memiliki parameter."
+            )
+
+        else:
+
+            active_parameters = st.radio(
                 "Pilih algoritma:",
-                selected_algorithms,
+                methods_with_parameters,
                 horizontal=True,
-                key="independent_active_initial"
+                key="independent_active_parameters"
             )
 
-            render_initial_panel(
-                active_initial,
-                selected_algorithms,
-                df
-            )
-
-
-        # ====================================================
-        # TAB: PARAMETERS  (pilih algoritma → ubah)
-        # ====================================================
-
-        with tab_parameters:
-
-            methods_with_parameters = [
-                method
-                for method in selected_algorithms
-                if ALGORITHMS[method]["parameters"]
-            ]
-
-            if not methods_with_parameters:
-
-                st.caption(
-                    "Algoritma yang dipilih tidak memiliki parameter."
-                )
-
-            else:
-
-                active_parameters = st.radio(
-                    "Pilih algoritma:",
-                    methods_with_parameters,
-                    horizontal=True,
-                    key="independent_active_parameters"
-                )
-
-                render_parameter_panel(active_parameters)
+            render_parameter_panel(active_parameters)
 
 
         # Pengaturan SEMUA algoritma terpilih dibaca dari
@@ -3760,7 +4429,7 @@ with tab_independent:
 
 with tab_hybrid:
 
-    render_hybrid_placeholder()
+    render_hybrid(df, dist_matrix)
 
 
 # ============================================================
