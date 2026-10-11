@@ -117,8 +117,55 @@ st.markdown(
     [data-testid="stSidebar"] { border-right: 1px solid var(--line); }
     hr { border-color: var(--line) !important; }
 
+    /* Sidebar & input: krem lembut (tidak bergantung pada config.toml) */
+    [data-testid="stSidebar"] { background-color: var(--cream) !important; }
+    div[data-baseweb="select"] > div,
+    div[data-baseweb="base-input"] {
+        background-color: var(--cream) !important;
+        border: 1px solid var(--line) !important;
+        border-radius: 8px !important;
+    }
+    [data-testid="stSidebar"] div[data-baseweb="select"] > div,
+    [data-testid="stSidebar"] div[data-baseweb="base-input"] {
+        background-color: #FFFFFF !important;
+    }
+
+    /* Aksen utama Rosewood: tag, radio, checkbox, slider, tab */
+    span[data-baseweb="tag"] {
+        background-color: var(--rosewood) !important;
+        color: var(--chiffon) !important;
+        border-radius: 6px !important;
+    }
+    span[data-baseweb="tag"] span { color: var(--chiffon) !important; }
+    label[data-baseweb="radio"]:has(input:checked) > div:first-child {
+        background-color: var(--rosewood) !important;
+        border-color: var(--rosewood) !important;
+    }
+    label[data-baseweb="checkbox"]:has(input:checked) > span:first-child {
+        background-color: var(--rosewood) !important;
+        border-color: var(--rosewood) !important;
+    }
+    div[role="slider"] {
+        background-color: var(--rosewood) !important;
+        box-shadow: none !important;
+    }
+    [data-testid="stSliderThumbValue"],
+    [data-testid="stThumbValue"] { color: var(--rosewood) !important; }
+    button[data-baseweb="tab"][aria-selected="true"] {
+        color: var(--rosewood) !important;
+    }
+    div[data-baseweb="tab-highlight"] {
+        background-color: var(--rosewood) !important;
+    }
+
     /* Tombol utama */
-    button[kind="primary"] { border-radius: 8px; font-weight: 600; }
+    button[kind="primary"] {
+        background-color: var(--rosewood) !important;
+        border: 1px solid var(--rosewood) !important;
+        color: var(--chiffon) !important;
+        border-radius: 8px;
+        font-weight: 600;
+    }
     button[kind="primary"]:hover {
         background-color: #4E0809 !important;
         border-color: #4E0809 !important;
@@ -4356,7 +4403,6 @@ with st.sidebar:
         active_initial = st.radio(
             "Pilih algoritma:",
             selected_algorithms,
-            horizontal=True,
             key="independent_active_initial"
         )
 
@@ -4392,7 +4438,6 @@ with st.sidebar:
             active_parameters = st.radio(
                 "Pilih algoritma:",
                 methods_with_parameters,
-                horizontal=True,
                 key="independent_active_parameters"
             )
 
