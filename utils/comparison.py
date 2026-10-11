@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 """
 comparison.py
 
@@ -8,23 +10,77 @@ Tidak bergantung pada Streamlit.
 import pandas as pd
 import plotly.graph_objects as go
 
-# Palet tema (Rosewood, Botticelli gelap, emas, Coffee Bean)
-BAR_COLORS = ["#6B0B0C", "#4F8FA3", "#B7791F", "#2D120D", "#A34A4B", "#7FB0C0"]
+# Palet tema
+ROSEWOOD = "#6B0B0C"      # batang terbaik
+MUTED = "#A9C7D1"         # batang lainnya (Botticelli yang lebih pekat)
+COFFEE = "#2D120D"
+GRID = "#EDE7C4"          # garis bantu tipis (turunan Lemon Chiffon)
 
 
-def _bar_colors(n):
-    return [BAR_COLORS[i % len(BAR_COLORS)] for i in range(n)]
+def _bar_chart(comparison_df, column, title, y_title, best, fmt):
+    """
+    Bar chart satu warna: batang terbaik Rosewood, lainnya Botticelli lembut.
 
+    best : "min" (nilai terkecil terbaik) atau "max" (terbesar terbaik)
+    fmt  : fungsi format label di atas batang
+    """
 
-def _style(fig):
+    values = list(comparison_df[column])
+
+    fig = go.Figure()
+
+    if values:
+
+        target = min(values) if best == "min" else max(values)
+
+        colors = [ROSEWOOD if v == target else MUTED for v in values]
+
+        fig.add_trace(
+            go.Bar(
+                x=comparison_df["Method"],
+                y=values,
+                marker=dict(color=colors, line=dict(width=0)),
+                text=[fmt(v) for v in values],
+                textposition="outside",
+                cliponaxis=False,
+                textfont=dict(color=COFFEE, size=13),
+                hovertemplate="%{x}<br>" + y_title + ": %{y}<extra></extra>"
+            )
+        )
+
     fig.update_layout(
+        title=dict(
+            text=(
+                f"{title}<br>"
+                "<sup>Batang Rosewood = terbaik</sup>"
+            ),
+            font=dict(family="Georgia, serif", size=18, color=COFFEE)
+        ),
+        xaxis_title=None,
+        yaxis_title=y_title,
+        height=420,
+        bargap=0.45,
+        showlegend=False,
         paper_bgcolor="white",
-        plot_bgcolor="#FFFDF0",
-        font=dict(color="#2D120D"),
-        title_font=dict(family="Georgia, serif", size=18, color="#2D120D")
+        plot_bgcolor="white",
+        font=dict(color=COFFEE),
+        margin=dict(l=20, r=20, t=80, b=40)
     )
-    fig.update_xaxes(gridcolor="#DCEBEF", linecolor="#DCEBEF")
-    fig.update_yaxes(gridcolor="#DCEBEF", linecolor="#DCEBEF")
+
+    fig.update_xaxes(
+        automargin=True,
+        showgrid=False,
+        linecolor=GRID,
+        tickangle=-15 if len(values) > 3 else 0
+    )
+
+    fig.update_yaxes(
+        rangemode="tozero",
+        gridcolor=GRID,
+        zeroline=False,
+        showline=False
+    )
+
     return fig
 
 
@@ -220,32 +276,14 @@ def plot_distance_comparison(comparison_df):
     Semakin kecil semakin baik.
     """
 
-    fig = go.Figure()
-
-    fig.add_trace(
-        go.Bar(
-            x=comparison_df["Method"],
-            y=comparison_df["Final Distance"],
-            text=comparison_df["Final Distance"],
-            textposition="auto",
-            marker_color=_bar_colors(len(comparison_df))
-        )
+    return _bar_chart(
+        comparison_df,
+        "Final Distance",
+        "Final Distance Comparison",
+        "Final Distance",
+        "min",
+        lambda v: f"{v:.2f}"
     )
-
-    fig.update_layout(
-        title="Final Distance Comparison",
-        xaxis_title="Method",
-        yaxis_title="Final Distance",
-        height=400,
-        margin=dict(
-            l=20,
-            r=20,
-            t=50,
-            b=80
-        )
-    )
-
-    return _style(fig)
 
 
 # ============================================================
@@ -258,32 +296,14 @@ def plot_time_comparison(comparison_df):
     Semakin kecil semakin cepat.
     """
 
-    fig = go.Figure()
-
-    fig.add_trace(
-        go.Bar(
-            x=comparison_df["Method"],
-            y=comparison_df["Execution Time (ms)"],
-            text=comparison_df["Execution Time (ms)"],
-            textposition="auto",
-            marker_color=_bar_colors(len(comparison_df))
-        )
+    return _bar_chart(
+        comparison_df,
+        "Execution Time (ms)",
+        "Execution Time Comparison",
+        "Time (ms)",
+        "min",
+        lambda v: f"{v:.3f}"
     )
-
-    fig.update_layout(
-        title="Execution Time Comparison",
-        xaxis_title="Method",
-        yaxis_title="Time (ms)",
-        height=400,
-        margin=dict(
-            l=20,
-            r=20,
-            t=50,
-            b=80
-        )
-    )
-
-    return _style(fig)
 
 
 # ============================================================
@@ -304,9 +324,9 @@ def plot_improvement_comparison(comparison_df):
         subset=["Improvement (%)"]
     )
 
-    fig = go.Figure()
-
     if data.empty:
+
+        fig = go.Figure()
 
         fig.add_annotation(
             text=(
@@ -317,35 +337,26 @@ def plot_improvement_comparison(comparison_df):
             yref="paper",
             x=0.5,
             y=0.5,
-            showarrow=False
+            showarrow=False,
+            font=dict(color=COFFEE)
         )
 
-    else:
-
-        fig.add_trace(
-            go.Bar(
-                x=data["Method"],
-                y=data["Improvement (%)"],
-                text=[
-                    f"{x:.2f}%"
-                    for x in data["Improvement (%)"]
-                ],
-                textposition="auto",
-                marker_color=_bar_colors(len(data))
-            )
+        fig.update_layout(
+            title="Solution Improvement",
+            height=300,
+            paper_bgcolor="white",
+            plot_bgcolor="white",
+            xaxis=dict(visible=False),
+            yaxis=dict(visible=False)
         )
 
-    fig.update_layout(
-        title="Solution Improvement",
-        xaxis_title="Method",
-        yaxis_title="Improvement (%)",
-        height=400,
-        margin=dict(
-            l=20,
-            r=20,
-            t=50,
-            b=80
-        )
+        return fig
+
+    return _bar_chart(
+        data,
+        "Improvement (%)",
+        "Solution Improvement",
+        "Improvement (%)",
+        "max",
+        lambda v: f"{v:.2f}%"
     )
-
-    return _style(fig)
