@@ -60,8 +60,8 @@ st.set_page_config(
     layout="wide"
 )
 
-# Tema: Lemon Chiffon #FFF8CA · Rosewood #6B0B0C · Coffee Bean #2D120D · Botticelli #CDE3E8
-# Halaman utama putih; teks Coffee Bean; aksen Rosewood; Botticelli untuk kotak info & sorotan.
+# Tema "Botticelli Mist": dasar biru-abu lembut (turunan Botticelli #CDE3E8), tanpa kuning.
+# Teks Coffee Bean #2D120D; aksen Rosewood #6B0B0C; kartu putih agar menonjol lembut.
 st.markdown(
     """
     <style>
@@ -70,12 +70,16 @@ st.markdown(
     :root {
         --rosewood: #6B0B0C;
         --coffee: #2D120D;
-        --lemon: #FFF8CA;
-        --lemon-soft: #FFFBE3;
+        --mist: #F4F8F9;
+        --mist-deep: #E2EDF0;
+        --surface: #FFFFFF;
         --botticelli: #CDE3E8;
         --botticelli-soft: #E1EEF1;
         --teal: #4F8FA3;
     }
+
+    /* Cadangan jika .streamlit/config.toml belum dipasang */
+    .stApp { background-color: var(--mist); color: var(--coffee); }
 
     /* Judul klasik (serif) */
     h1, h2, h3 {
@@ -90,7 +94,7 @@ st.markdown(
 
     /* Sidebar */
     [data-testid="stSidebar"] {
-        background-color: var(--lemon-soft) !important;
+        background-color: var(--mist-deep) !important;
         border-right: 1px solid rgba(107, 11, 12, 0.15);
     }
     [data-testid="stSidebar"] hr { margin: 0.6rem 0 !important; }
@@ -102,7 +106,7 @@ st.markdown(
     button[kind="primary"], [data-testid="stBaseButton-primary"] {
         background-color: var(--rosewood) !important;
         border: 1px solid var(--rosewood) !important;
-        color: var(--lemon) !important;
+        color: #FFFFFF !important;
         font-weight: 600;
         letter-spacing: 0.3px;
     }
@@ -117,10 +121,12 @@ st.markdown(
 
     /* Kartu metrik */
     [data-testid="stMetric"] {
-        background: var(--lemon);
+        background: var(--surface);
+        border: 1px solid rgba(45, 18, 13, 0.08);
         border-left: 4px solid var(--rosewood);
         border-radius: 10px;
         padding: 0.6rem 0.9rem;
+        box-shadow: 0 1px 3px rgba(45, 18, 13, 0.08);
     }
     [data-testid="stMetricValue"] { color: var(--rosewood); }
 
@@ -720,8 +726,8 @@ def _result_block(history, k, labels, note=""):
 
     item = history[k]
 
-    return _lines("Hasil Iterasi", [
-        ("Rute", route_text(_route_of(item), labels)),
+    return _lines("Hasil Iterasi Ini", [
+        ("Rute Saat Ini", route_text(_route_of(item), labels)),
         ("Total Jarak", _f(item.get("distance")) + note),
     ])
 
