@@ -1,3 +1,12 @@
+# -*- coding: utf-8 -*-
+
+"""
+comparison.py
+
+Fungsi untuk membandingkan hasil beberapa metode TSP.
+Tidak bergantung pada Streamlit.
+"""
+
 import pandas as pd
 import plotly.graph_objects as go
 
@@ -305,7 +314,7 @@ def plot_improvement_comparison(comparison_df):
                     for x in data["Improvement (%)"]
                 ],
                 textposition="auto",
-                marker_color="#B7791F"
+                marker_color="#B23A48"
             )
         )
 
