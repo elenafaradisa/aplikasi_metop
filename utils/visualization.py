@@ -1,3 +1,13 @@
+# -*- coding: utf-8 -*-
+
+"""
+visualization.py
+
+Fungsi visualisasi untuk aplikasi TSP.
+File ini hanya membuat objek Plotly.
+Penampilan di Streamlit dilakukan oleh app.py.
+"""
+
 import plotly.graph_objects as go
 
 
@@ -29,7 +39,7 @@ def plot_nodes(df, home=0, title="Node Distribution"):
 
     # Semua node
     colors = [
-        "#B7791F" if i == home else "#4F8FA3"
+        "#B23A48" if i == home else "#4F8FA3"
         for i in range(len(df))
     ]
 
@@ -175,7 +185,7 @@ def plot_route(
     # --------------------------------------------------------
 
     node_colors = [
-        "#B7791F" if i == home else "#4F8FA3"
+        "#B23A48" if i == home else "#4F8FA3"
         for i in range(len(df))
     ]
 
