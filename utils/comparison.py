@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 """
 comparison.py
 
@@ -9,6 +7,25 @@ Tidak bergantung pada Streamlit.
 
 import pandas as pd
 import plotly.graph_objects as go
+
+# Palet tema (Rosewood, Botticelli gelap, emas, Coffee Bean)
+BAR_COLORS = ["#6B0B0C", "#4F8FA3", "#B7791F", "#2D120D", "#A34A4B", "#7FB0C0"]
+
+
+def _bar_colors(n):
+    return [BAR_COLORS[i % len(BAR_COLORS)] for i in range(n)]
+
+
+def _style(fig):
+    fig.update_layout(
+        paper_bgcolor="white",
+        plot_bgcolor="#FFFDF0",
+        font=dict(color="#2D120D"),
+        title_font=dict(family="Georgia, serif", size=18, color="#2D120D")
+    )
+    fig.update_xaxes(gridcolor="#DCEBEF", linecolor="#DCEBEF")
+    fig.update_yaxes(gridcolor="#DCEBEF", linecolor="#DCEBEF")
+    return fig
 
 
 # ============================================================
@@ -210,7 +227,8 @@ def plot_distance_comparison(comparison_df):
             x=comparison_df["Method"],
             y=comparison_df["Final Distance"],
             text=comparison_df["Final Distance"],
-            textposition="auto"
+            textposition="auto",
+            marker_color=_bar_colors(len(comparison_df))
         )
     )
 
@@ -227,7 +245,7 @@ def plot_distance_comparison(comparison_df):
         )
     )
 
-    return fig
+    return _style(fig)
 
 
 # ============================================================
@@ -247,7 +265,8 @@ def plot_time_comparison(comparison_df):
             x=comparison_df["Method"],
             y=comparison_df["Execution Time (ms)"],
             text=comparison_df["Execution Time (ms)"],
-            textposition="auto"
+            textposition="auto",
+            marker_color=_bar_colors(len(comparison_df))
         )
     )
 
@@ -264,7 +283,7 @@ def plot_time_comparison(comparison_df):
         )
     )
 
-    return fig
+    return _style(fig)
 
 
 # ============================================================
@@ -311,7 +330,8 @@ def plot_improvement_comparison(comparison_df):
                     f"{x:.2f}%"
                     for x in data["Improvement (%)"]
                 ],
-                textposition="auto"
+                textposition="auto",
+                marker_color=_bar_colors(len(data))
             )
         )
 
@@ -328,4 +348,4 @@ def plot_improvement_comparison(comparison_df):
         )
     )
 
-    return fig
+    return _style(fig)
