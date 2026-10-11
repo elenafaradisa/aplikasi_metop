@@ -720,8 +720,8 @@ def _result_block(history, k, labels, note=""):
 
     item = history[k]
 
-    return _lines("Hasil Iterasi Ini", [
-        ("Rute Saat Ini", route_text(_route_of(item), labels)),
+    return _lines("Hasil Iterasi", [
+        ("Rute", route_text(_route_of(item), labels)),
         ("Total Jarak", _f(item.get("distance")) + note),
     ])
 
