@@ -1,31 +1,6 @@
 import plotly.graph_objects as go
 
 
-# Palet tema
-ROSEWOOD = "#6B0B0C"
-COFFEE = "#2D120D"
-NODE_BLUE = "#4F8FA3"
-HOME_GOLD = "#B7791F"
-PLOT_BG = "#FFFDF0"      
-GRID = "#DCEBEF"        
-
-
-def style_figure(fig):
-    """Gaya seragam: latar krem lembut, grid Botticelli, teks Coffee Bean."""
-
-    fig.update_layout(
-        paper_bgcolor="white",
-        plot_bgcolor=PLOT_BG,
-        font=dict(color=COFFEE),
-        title_font=dict(family="Georgia, serif", size=18, color=COFFEE)
-    )
-
-    fig.update_xaxes(gridcolor=GRID, zerolinecolor=GRID, linecolor=GRID)
-    fig.update_yaxes(gridcolor=GRID, zerolinecolor=GRID, linecolor=GRID)
-
-    return fig
-
-
 # ============================================================
 # 1. VISUALISASI SEBARAN NODE
 # ============================================================
@@ -54,7 +29,7 @@ def plot_nodes(df, home=0, title="Node Distribution"):
 
     # Semua node
     colors = [
-        HOME_GOLD if i == home else NODE_BLUE
+        "#B7791F" if i == home else "#4F8FA3"
         for i in range(len(df))
     ]
 
@@ -100,7 +75,7 @@ def plot_nodes(df, home=0, title="Node Distribution"):
         showlegend=False
     )
 
-    return style_figure(fig)
+    return fig
 
 
 # ============================================================
@@ -156,7 +131,7 @@ def plot_route(
             y=ys,
             mode="lines",
             line=dict(
-                color=ROSEWOOD,
+                color="#6B0B0C",
                 width=3
             ),
             hoverinfo="skip",
@@ -191,7 +166,7 @@ def plot_route(
                 arrowhead=3,
                 arrowsize=1,
                 arrowwidth=1.5,
-                arrowcolor=ROSEWOOD,
+                arrowcolor="#6B0B0C",
                 standoff=8
             )
 
@@ -200,7 +175,7 @@ def plot_route(
     # --------------------------------------------------------
 
     node_colors = [
-        HOME_GOLD if i == home else NODE_BLUE
+        "#B7791F" if i == home else "#4F8FA3"
         for i in range(len(df))
     ]
 
@@ -253,7 +228,7 @@ def plot_route(
         )
     )
 
-    return style_figure(fig)
+    return fig
 
 
 # ============================================================
