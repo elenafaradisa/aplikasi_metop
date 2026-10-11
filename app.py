@@ -1,3 +1,4 @@
+import html
 import streamlit as st
 import pandas as pd
 import math
@@ -20,7 +21,10 @@ from algorithms.constructive import (
 
 from algorithms.local_search import (
     two_opt,
-    three_opt
+    three_opt,
+    apply_2opt,
+    apply_3opt,
+    RECONNECTIONS_3OPT
 )
 
 from algorithms.simulated_annealing import (
@@ -60,10 +64,67 @@ st.set_page_config(
     layout="wide"
 )
 
-# Spasi sidebar: garis di bawah judul lebih dekat ke judul
+# Tema: Rosewood #6B0B0C, Lemon Chiffon #FFF8CA,
+#       Coffee Bean #2D120D, Botticelli #CDE3E8 (halaman utama putih)
 st.markdown(
     """
     <style>
+    :root {
+        --rosewood: #6B0B0C;
+        --coffee: #2D120D;
+        --chiffon: #FFF8CA;
+        --cream: #FFFBE3;
+        --botticelli: #CDE3E8;
+        --botticelli-soft: #EAF3F6;
+        --line: #E9E1B8;
+    }
+
+    /* Judul: serif klasik */
+    h1, h2, h3 {
+        font-family: Georgia, "Times New Roman", serif !important;
+        letter-spacing: -0.01em;
+    }
+    h1 { color: var(--rosewood) !important; }
+    h2, h3 { color: var(--coffee) !important; }
+    h4, h5 { color: var(--rosewood) !important; font-weight: 600 !important; }
+
+    /* Kartu metrik */
+    [data-testid="stMetric"] {
+        background: var(--cream);
+        border: 1px solid var(--line);
+        border-left: 4px solid var(--rosewood);
+        border-radius: 10px;
+        padding: 0.7rem 1rem;
+    }
+
+    /* Kotak penjelasan */
+    .callout {
+        background: var(--botticelli-soft);
+        border: 1px solid var(--botticelli);
+        border-left: 5px solid var(--rosewood);
+        border-radius: 10px;
+        padding: 0.85rem 1.1rem;
+        color: var(--coffee);
+        line-height: 1.55;
+        margin: 0.4rem 0 1rem 0;
+    }
+
+    /* Expander, sidebar, garis pemisah */
+    [data-testid="stExpander"] {
+        border: 1px solid var(--line) !important;
+        border-radius: 10px !important;
+    }
+    [data-testid="stSidebar"] { border-right: 1px solid var(--line); }
+    hr { border-color: var(--line) !important; }
+
+    /* Tombol utama */
+    button[kind="primary"] { border-radius: 8px; font-weight: 600; }
+    button[kind="primary"]:hover {
+        background-color: #4E0809 !important;
+        border-color: #4E0809 !important;
+    }
+
+    /* Spasi sidebar: garis di bawah judul lebih dekat ke judul */
     .st-key-sidebar_title { gap: 0.15rem !important; }
     .st-key-sidebar_title hr { margin: 0.15rem 0 0.35rem 0 !important; }
     .st-key-sidebar_title h2 { padding: 0 0 0.15rem 0 !important; }
@@ -72,6 +133,15 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
+
+def callout(html_text):
+    """Kotak penjelasan bertema (isi sudah berupa HTML aman)."""
+
+    st.markdown(
+        f'<div class="callout">{html_text}</div>',
+        unsafe_allow_html=True
+    )
 
 
 # ============================================================
@@ -561,10 +631,15 @@ def _attr_of_move(route, i, j):
 
 
 # Blok tampilan -------------------------------------------------
-
-def _lines(heading, pairs):
-    return {"kind": "lines", "heading": heading, "lines": pairs}
-
+#
+# Setiap view iterasi punya bentuk yang SAMA:
+#
+#   {
+#       "title":   "2",                      -> "Detail Iterasi : 2"
+#       "result":  [(label, nilai), ...],    -> "Hasil Iterasi Ini"
+#       "process": [(label, nilai), ...],    -> "Proses & Perhitungan"
+#       "blocks":  [tabel / teks pendukung]
+#   }
 
 def _table(heading, df, caption=None):
     return {"kind": "table", "heading": heading, "df": df, "caption": caption}
@@ -574,21 +649,27 @@ def _text(text):
     return {"kind": "text", "text": text}
 
 
-def _summary(k, history, labels, distance_note=""):
+def _iter_no(history, k):
 
     item = history[k]
 
-    return [
-        ("Iteration", str(item.get("iteration", k))),
-        ("Route", route_text(_route_of(item), labels)),
-        ("Distance", _f(item.get("distance")) + distance_note),
-    ]
+    if isinstance(item, dict):
+        return item.get("iteration", k)
+
+    return k
 
 
-def _before_after(k, history):
+def _path_len(route, dist):
+    """Panjang rute terbuka (tanpa kembali ke start)."""
 
-    before = history[k - 1].get("distance")
-    after = history[k].get("distance")
+    return sum(
+        dist[route[i]][route[i + 1]]
+        for i in range(len(route) - 1)
+    )
+
+
+def _change_line(before, after):
+    """Satu baris perubahan jarak: sebelum ➔ sesudah (selisih)."""
 
     delta = (
         None
@@ -596,15 +677,64 @@ def _before_after(k, history):
         else after - before
     )
 
-    return [
-        ("Distance sebelum", _f(before)),
-        ("Distance sesudah", _f(after)),
-        ("Δ Distance", _signed(delta)),
+    return (
+        "Perubahan Jarak",
+        f"{_f(before)} ➔ {_f(after)} ({_signed(delta)})",
+    )
+
+
+def _make_view(
+    history, k, labels, process,
+    blocks=None, distance=None, distance_note="", extra_result=None
+):
+
+    item = history[k]
+
+    if distance is None:
+        distance = item.get("distance")
+
+    result = [
+        ("Rute Saat Ini", route_text(_route_of(item), labels)),
+        ("Total Jarak", _f(distance) + distance_note),
     ]
+
+    if extra_result:
+        result += extra_result
+
+    return {
+        "title": str(_iter_no(history, k)),
+        "result": result,
+        "process": process,
+        "blocks": blocks or [],
+    }
+
+
+def _move_ij(move):
+    """Ambil (i, j) dari move: bisa di level atas atau di 'positions'."""
+
+    move = move or {}
+
+    if "i" in move and "j" in move:
+        return move["i"], move["j"]
+
+    positions = move.get("positions") or {}
+
+    return positions.get("i"), positions.get("j")
+
+
+def _reverse_text(route, i, j, labels):
+    """Teks 'Balik segmen X → Y'."""
+
+    segment = list(route[i:j + 1])
+
+    return (
+        f"Balik segmen {route_text(segment, labels)} "
+        f"menjadi {route_text(segment[::-1], labels)}"
+    )
 
 
 # ============================================================
-# CONSTRUCTIVE (NN, NI, FI, AI)
+# TURUNAN DATA CONSTRUCTIVE (dari history + distance matrix)
 # ============================================================
 
 def _derive_nn(history, k, dist):
@@ -731,6 +861,22 @@ def _derive_insertion(kind, history, k, dist):
     }
 
 
+
+
+# ============================================================
+# CONSTRUCTIVE (NN, NI, FI, AI)
+# ============================================================
+
+def _candidate_table(rows):
+    """rows memuat kolom '_sort'; hasil diurutkan lalu kolom itu dibuang."""
+
+    return (
+        pd.DataFrame(rows)
+        .sort_values("_sort", kind="stable")
+        .drop(columns="_sort")
+    )
+
+
 def _constructive_view(kind, history, k, dist, labels):
 
     L = labels
@@ -740,169 +886,169 @@ def _constructive_view(kind, history, k, dist, labels):
     else:
         d = _derive_insertion(kind, history, k, dist)
 
-    blocks = []
+    cur = _route_of(history[k])
 
-    # ---------------- NN ----------------
+    # ---------------- Nearest Neighbor ----------------
 
     if d["type"] == "initial":
 
-        blocks.append(_text(
-            f"Mulai dari start node **{L[d['start']]}**. "
-            "Belum ada jarak yang dihitung."
-        ))
-
-        return {
-            "summary": _summary(k, history, L),
-            "blocks": blocks,
-        }
+        return _make_view(
+            history, k, L,
+            [(
+                "Keterangan",
+                f"Mulai dari start node {L[d['start']]}. "
+                "Belum ada jarak yang dihitung.",
+            )],
+            distance=0.0,
+        )
 
     if d["type"] == "close":
 
-        pairs = [
-            ("Posisi sekarang", L[d["current"]]),
-            ("Kembali ke start node", L[d["selected"]]),
+        prev = _route_of(history[k - 1])
+
+        process = [
+            ("Posisi Sekarang", L[d["current"]]),
             (
-                "Perhitungan",
-                f"d({L[d['current']]}, {L[d['selected']]}) = "
+                "Aksi",
+                "Semua node sudah dikunjungi, kembali ke start node "
+                f"{L[d['selected']]}",
+            ),
+            (
+                "Rumus Hitung",
+                f"d({L[d['current']]},{L[d['selected']]}) = "
                 f"{_f(d['distance'])}",
             ),
-        ] + _before_after(k, history)
+            _change_line(
+                _path_len(prev, dist),
+                history[k].get("distance"),
+            ),
+        ]
 
-        blocks.append(_lines("Perhitungan / keputusan", pairs))
-
-        return {
-            "summary": _summary(k, history, L),
-            "blocks": blocks,
-        }
+        return _make_view(history, k, L, process)
 
     if d["type"] == "move":
 
-        m = len(d["candidates"])
+        prev = _route_of(history[k - 1])
 
-        pairs = [
-            ("Posisi sekarang", L[d["current"]]),
-            ("Node yang dipilih", L[d["selected"]]),
+        before = _path_len(prev, dist)
+        after = _path_len(cur, dist)
+
+        c, s = L[d["current"]], L[d["selected"]]
+
+        process = [
+            ("Posisi Sekarang", c),
             (
-                "Alasan",
-                f"d({L[d['current']]}, {L[d['selected']]}) = "
-                f"{_f(d['distance'])} adalah yang terkecil "
-                f"dari {m} kandidat (jika sama, pilih node berindeks lebih kecil)",
+                "Node Dipilih",
+                f"{s} (jarak terdekat dari {c} di antara "
+                f"{len(d['candidates'])} kandidat; jika sama, pilih node "
+                "berindeks lebih kecil)",
             ),
-        ] + _before_after(k, history)
-
-        blocks.append(_lines("Perhitungan / keputusan", pairs))
+            ("Rumus Hitung", f"d({c},{s}) = {_f(d['distance'])}"),
+            _change_line(before, after),
+        ]
 
         rows = [
             {
-                "Node": L[c["node"]],
-                f"Jarak dari {L[d['current']]}": _f(c["distance"]),
-                "Dipilih": "✅" if c["node"] == d["selected"] else "",
-                "_sort": c["distance"],
+                "Node": L[x["node"]],
+                f"Jarak dari {c}": _f(x["distance"]),
+                "Dipilih": "✅" if x["node"] == d["selected"] else "",
+                "_sort": x["distance"],
             }
-            for c in d["candidates"]
+            for x in d["candidates"]
         ]
 
-        df = (
-            pd.DataFrame(rows)
-            .sort_values("_sort", kind="stable")
-            .drop(columns="_sort")
+        blocks = [_table(
+            "Tabel Kandidat",
+            _candidate_table(rows),
+            f"Node yang belum dikunjungi, diurutkan dari jarak terdekat "
+            f"ke {c}.",
+        )]
+
+        return _make_view(
+            history, k, L, process, blocks,
+            distance=after,
+            distance_note=" (belum termasuk kembali ke start)",
         )
-
-        blocks.append(_table(
-            f"Kandidat: jarak dari {L[d['current']]} ke setiap node "
-            "yang belum dikunjungi",
-            df,
-            "Diurutkan dari jarak terkecil.",
-        ))
-
-        return {
-            "summary": _summary(
-                k, history, L,
-                " (sementara, sudah termasuk kembali ke start node)"
-            ),
-            "blocks": blocks,
-        }
 
     # ---------------- Insertion ----------------
 
     if d["type"] == "initial_pair":
 
-        pairs = [
-            ("Start node", L[d["start"]]),
-            ("Node kedua", f"{L[d['selected']]} ({START_RULE[kind]})"),
+        a, b = L[d["start"]], L[d["selected"]]
+
+        pair_distance = dist[d["start"]][d["selected"]]
+
+        process = [
+            ("Start Node", a),
+            ("Node Kedua", f"{b} ({START_RULE[kind]})"),
             (
-                "Tour awal",
-                f"{L[d['start']]} → {L[d['selected']]} → {L[d['start']]}",
-            ),
-            (
-                "Distance",
-                f"2 × d({L[d['start']]}, {L[d['selected']]}) = "
-                f"{_f(history[k].get('distance'))}",
+                "Rumus Hitung",
+                f"2 × d({a},{b})\n"
+                f"= 2 × {_f(pair_distance)}\n"
+                f"= {_f(history[k].get('distance'))}",
             ),
         ]
 
-        blocks.append(_lines("Perhitungan / keputusan", pairs))
+        blocks = []
 
         if d["candidates"]:
 
             rows = [
                 {
-                    "Node": L[c["node"]],
-                    f"Jarak dari {L[d['start']]}": _f(c["distance"]),
-                    "Dipilih": "✅" if c["node"] == d["selected"] else "",
-                    "_sort": c["distance"],
+                    "Node": L[x["node"]],
+                    f"Jarak dari {a}": _f(x["distance"]),
+                    "Dipilih": "✅" if x["node"] == d["selected"] else "",
+                    "_sort": x["distance"],
                 }
-                for c in d["candidates"]
+                for x in d["candidates"]
             ]
 
-            df = (
-                pd.DataFrame(rows)
-                .sort_values("_sort", kind="stable")
-                .drop(columns="_sort")
-            )
-
             blocks.append(_table(
-                f"Kandidat node kedua (jarak dari {L[d['start']]})",
-                df,
+                "Tabel Kandidat",
+                _candidate_table(rows),
+                f"Pilihan node kedua, diurutkan dari jarak ke {a}.",
             ))
 
-        return {
-            "summary": _summary(k, history, L),
-            "blocks": blocks,
-        }
+        return _make_view(history, k, L, process, blocks)
 
     # type == insert
 
     s = L[d["selected"]]
     a, b = L[d["after"]], L[d["before"]]
 
-    pairs = [
-        ("Node yang dipilih", f"{s} ({INSERTION_RULE[kind]})"),
-        ("Disisipkan setelah", a),
-        ("Disisipkan antara", f"{a} dan {b}"),
+    process = [
+        ("Node Dipilih", f"{s} ({INSERTION_RULE[kind]})"),
         (
-            "Tambahan jarak",
-            f"d({a},{s}) + d({s},{b}) − d({a},{b}) = "
-            f"{_f(dist[d['after']][d['selected']])} + "
-            f"{_f(dist[d['selected']][d['before']])} − "
-            f"{_f(dist[d['after']][d['before']])} = "
-            f"{_f(d['increase'])}",
+            "Posisi Sisip",
+            f"Disisipkan di antara node {a} dan {b} (setelah node {a})",
         ),
-    ] + _before_after(k, history)
+        (
+            "Rumus Hitung",
+            f"d({a},{s}) + d({s},{b}) − d({a},{b})\n"
+            f"= {_f(dist[d['after']][d['selected']])} + "
+            f"{_f(dist[d['selected']][d['before']])} − "
+            f"{_f(dist[d['after']][d['before']])}\n"
+            f"= {_signed(d['increase'])}",
+        ),
+        _change_line(
+            history[k - 1].get("distance"),
+            history[k].get("distance"),
+        ),
+    ]
 
-    blocks.append(_lines("Perhitungan / keputusan", pairs))
+    blocks = []
 
     if d["candidates"]:
 
         rows = [
             {
-                "Node": L[c["node"]],
-                "Jarak ke tour (terdekat)": _f(c["distance"]),
-                "Node tour terdekat": L[c["nearest_tour_node"]],
-                "Dipilih": "✅" if c["node"] == d["selected"] else "",
-                "_sort": c["distance"],
+                "Node": L[x["node"]],
+                "Jarak ke tour (terdekat)": _f(x["distance"]),
+                "Node tour terdekat": L[x["nearest_tour_node"]],
+                "Dipilih": "✅" if x["node"] == d["selected"] else "",
+                "_sort": x["distance"],
             }
-            for c in d["candidates"]
+            for x in d["candidates"]
         ]
 
         df = pd.DataFrame(rows).sort_values(
@@ -912,21 +1058,23 @@ def _constructive_view(kind, history, k, dist, labels):
         ).drop(columns="_sort")
 
         blocks.append(_table(
-            "Langkah 1 — memilih node yang akan disisipkan",
+            "Tabel Pemilihan Node",
             df,
             (
-                "Nearest Insertion memilih jarak terkecil ke tour."
+                "Nearest Insertion memilih node dengan jarak terkecil "
+                "ke tour."
                 if kind == "ni"
-                else "Farthest Insertion memilih jarak terbesar ke tour."
+                else
+                "Farthest Insertion memilih node dengan jarak terbesar "
+                "ke tour."
             ),
         ))
 
     elif kind == "ai":
 
         blocks.append(_text(
-            f"**Langkah 1 — memilih node:** node **{s}** dipilih secara "
-            "acak dari node yang belum masuk tour (hasilnya tetap sama "
-            "selama seed sama)."
+            f"Node **{s}** dipilih secara acak dari node yang belum masuk "
+            "tour (hasilnya tetap sama selama seed sama)."
         ))
 
     rows = [
@@ -942,39 +1090,18 @@ def _constructive_view(kind, history, k, dist, labels):
     ]
 
     blocks.append(_table(
-        f"Langkah 2 — mencari posisi terbaik untuk {s}",
+        "Tabel Posisi Sisip",
         pd.DataFrame(rows),
-        f"Tambahan jarak = d(i,{s}) + d({s},j) − d(i,j); "
-        "dipilih yang tambahannya paling kecil.",
+        f"Tambahan jarak = d(i,{s}) + d({s},j) − d(i,j). "
+        "Dipilih posisi dengan tambahan paling kecil.",
     ))
 
-    return {
-        "summary": _summary(k, history, L),
-        "blocks": blocks,
-    }
+    return _make_view(history, k, L, process, blocks)
 
 
 # ============================================================
 # TABU SEARCH
 # ============================================================
-
-def _tabu_list_table(tabu_list, labels, k, new_attr=None):
-
-    rows = []
-
-    for attr, expiry in (tabu_list or {}).items():
-
-        rows.append({
-            "Edge baru yang dilarang dibongkar": attr_text(attr, labels),
-            "Tabu sampai iterasi": int(expiry),
-            "Status": (
-                "baru masuk" if (new_attr is not None and attr == new_attr)
-                else ("aktif" if expiry >= k else "kadaluarsa")
-            ),
-        })
-
-    return pd.DataFrame(rows)
-
 
 def _tabu_view(history, k, dist, labels):
 
@@ -982,13 +1109,17 @@ def _tabu_view(history, k, dist, labels):
 
     if k == 0:
 
-        return {
-            "summary": _summary(k, history, L),
-            "blocks": [_text(
-                "Iterasi 0 adalah solusi awal. Tabu list masih kosong, "
-                f"dan aspiration level awal = {_f(history[0].get('distance'))}."
+        return _make_view(
+            history, k, L,
+            [(
+                "Keterangan",
+                "Ini rute awal. Tabu list masih kosong, belum ada move.",
             )],
-        }
+            extra_result=[(
+                "Jarak Terbaik Sejauh Ini",
+                _f(history[0].get("distance")),
+            )],
+        )
 
     prev, cur = history[k - 1], history[k]
 
@@ -998,75 +1129,103 @@ def _tabu_view(history, k, dist, labels):
     best_before = min(h.get("distance") for h in history[:k])
     best_after = min(h.get("distance") for h in history[:k + 1])
 
-    move = cur.get("move") or {}
-    mi, mj = move.get("i"), move.get("j")
+    mi, mj = _move_ij(cur.get("move"))
+
+    removed, added, _ = two_opt_move(route_before, mi, mj)
+
+    candidates = cur.get("candidates") or []
+
+    chosen = next(
+        (c for c in candidates if c["i"] == mi and c["j"] == mj),
+        None,
+    )
+
+    if chosen is None:
+        reason = "Jarak baru terkecil di antara move yang boleh dipilih"
+    elif chosen.get("is_tabu") and chosen.get("admissible"):
+        reason = (
+            "Move ini tabu, tetapi jarak barunya lebih kecil dari jarak "
+            f"terbaik sebelumnya ({_f(best_before)}) sehingga tetap boleh "
+            "dipilih (aspirasi)"
+        )
+    elif chosen.get("admissible"):
+        reason = (
+            "Tidak tabu dan jarak barunya paling kecil di antara move yang "
+            "boleh dipilih (boleh lebih panjang dari rute sekarang)"
+        )
+    else:
+        reason = (
+            "Semua move tabu dan tidak ada yang lolos aspirasi, jadi dipilih "
+            "move dengan jarak baru terkecil"
+        )
+
+    process = [
+        ("Rute Sebelumnya", route_text(route_before, L)),
+        (
+            "Move Dipilih",
+            f"{_reverse_text(route_before, mi, mj, L)}\n"
+            f"Edge dibuang: {_edges(removed, L)}\n"
+            f"Edge ditambah: {_edges(added, L)}",
+        ),
+        ("Alasan", reason),
+        _change_line(distance_before, cur.get("distance")),
+    ]
+
+    record = (
+        " (rekor baru)"
+        if best_after < best_before
+        else " (tidak berubah)"
+    )
 
     blocks = []
 
-    # --- kondisi awal iterasi
-    blocks.append(_lines("Kondisi awal iterasi", [
-        ("Current Route", route_text(route_before, L)),
-        ("Current Distance", _f(distance_before)),
-        (
-            "Aspiration level (jarak terbaik sejauh ini)",
-            _f(best_before),
-        ),
-    ]))
-
-    # --- tabu list sebelum
-    tl_before = prev.get("tabu_list") or {}
-
-    active = {a: e for a, e in tl_before.items() if e >= k}
-
-    if active:
-
-        blocks.append(_table(
-            "Tabu List (aktif pada iterasi ini)",
-            _tabu_list_table(active, L, k),
-            "Move yang membongkar (membuang) edge ini ditolak, kecuali "
-            "memenuhi aspiration criterion (jarak < aspiration level).",
-        ))
-
-    else:
-
-        blocks.append(_text("**Tabu List:** kosong (belum ada move yang dilarang)."))
-
-    # --- semua kandidat
-    candidates = cur.get("candidates") or []
+    # ---- tabel kandidat
 
     if candidates:
 
-        rows = []
+        rows = [{
+            "Move": "Rute saat ini",
+            "Rute Baru": route_text(route_before, L),
+            "Jarak Baru": _f(distance_before),
+            "Δ": "",
+            "Status": "",
+            "Dipilih": "",
+        }]
 
-        for c in candidates:
+        ordered = sorted(candidates, key=lambda c: c["distance"])
 
-            removed, added, new_route = two_opt_move(route_before, c["i"], c["j"])
+        for c in ordered:
+
+            _, _, new_route = two_opt_move(route_before, c["i"], c["j"])
+
+            if c.get("is_tabu"):
+                status = (
+                    "Tabu, lolos aspirasi"
+                    if c.get("aspiration_met")
+                    else "Tabu (ditolak)"
+                )
+            else:
+                status = "Boleh"
 
             rows.append({
-                "Move (i, j)": f"({c['i']}, {c['j']})",
-                "Edge dibuang": _edges(removed, L),
-                "Edge ditambah": _edges(added, L),
-                "New Route": route_text(new_route, L),
-                "New Distance": _f(c["distance"]),
+                "Move": (
+                    "Balik "
+                    + route_text(route_before[c["i"]:c["j"] + 1], L)
+                ),
+                "Rute Baru": route_text(new_route, L),
+                "Jarak Baru": _f(c["distance"]),
                 "Δ": _signed(c["distance"] - distance_before),
-                "Tabu?": "Ya" if c.get("is_tabu") else "Tidak",
-                "Aspirasi?": "Ya" if c.get("aspiration_met") else "Tidak",
-                "Boleh dipilih?": "Ya" if c.get("admissible") else "Tidak",
+                "Status": status,
                 "Dipilih": "✅" if (c["i"] == mi and c["j"] == mj) else "",
-                "_sort": c["distance"],
             })
 
-        df = (
-            pd.DataFrame(rows)
-            .sort_values("_sort", kind="stable")
-            .drop(columns="_sort")
-        )
-
         blocks.append(_table(
-            f"Candidate Moves ({len(candidates)} kandidat 2-opt dievaluasi)",
-            df,
-            "Diurutkan dari New Distance terkecil. Move dipilih dari "
-            "kandidat 'Boleh dipilih' dengan jarak terkecil.",
+            f"Tabel Kandidat Move ({len(candidates)} move dievaluasi)",
+            pd.DataFrame(rows),
+            "Diurutkan dari jarak baru terkecil. Move yang dipilih adalah "
+            "yang terkecil di antara status Boleh atau Tabu lolos aspirasi. "
+            "Aspirasi: move tabu tetap boleh jika jarak barunya lebih kecil "
+            f"dari jarak terbaik sebelumnya ({_f(best_before)}).",
         ))
 
     else:
@@ -1076,61 +1235,51 @@ def _tabu_view(history, k, dist, labels):
             "(verbose_history aktif hanya untuk dataset kecil)._"
         ))
 
-    # --- move terpilih
-    if mi is not None:
+    # ---- satu tabel tabu list
 
-        removed, added, _ = two_opt_move(route_before, mi, mj)
+    new_attr = _attr_of_move(route_before, mi, mj)
 
-        chosen = next(
-            (c for c in candidates if c["i"] == mi and c["j"] == mj),
-            None,
+    tabu_rows = []
+
+    for attr, expiry in (cur.get("tabu_list") or {}).items():
+
+        is_new = attr == new_attr
+
+        tabu_rows.append({
+            "Edge yang dilarang dibongkar": attr_text(attr, L),
+            "Berlaku sampai iterasi": int(expiry),
+            "Status": "Baru masuk" if is_new else "Masih aktif",
+            "_new": 0 if is_new else 1,
+        })
+
+    if tabu_rows:
+
+        tabu_df = (
+            pd.DataFrame(tabu_rows)
+            .sort_values(["_new", "Berlaku sampai iterasi"],
+                         ascending=[True, False], kind="stable")
+            .drop(columns="_new")
         )
 
-        if chosen is None:
-            reason = "-"
-        elif chosen.get("admissible") and chosen.get("is_tabu"):
-            reason = (
-                "move ini tabu, tetapi memenuhi aspiration criterion "
-                "(lebih baik dari aspiration level), jadi tetap boleh dipilih"
-            )
-        elif chosen.get("admissible"):
-            reason = (
-                "kandidat tidak tabu dengan New Distance terkecil "
-                "(boleh lebih buruk dari Current Distance)"
-            )
-        else:
-            reason = (
-                "semua kandidat tabu dan tidak ada yang memenuhi aspirasi, "
-                "sehingga dipilih kandidat dengan jarak terkecil (fallback)"
-            )
-
-        blocks.append(_lines("Selected Move", [
-            ("Move (i, j)", f"({mi}, {mj})"),
-            ("Edge dibuang", _edges(removed, L)),
-            ("Edge ditambah", _edges(added, L)),
-            ("Alasan", reason),
-            ("New Route", route_text(_route_of(cur), L)),
-            ("New Distance", _f(cur.get("distance"))),
-            ("Δ Distance", _signed(cur.get("distance") - distance_before)),
-            (
-                "Best so far",
-                f"{_f(best_before)} → {_f(best_after)}"
-                + ("  (rekor baru!)" if best_after < best_before else ""),
-            ),
-        ]))
-
-        new_attr = _attr_of_move(route_before, mi, mj)
-
         blocks.append(_table(
-            "Tabu List sesudah iterasi",
-            _tabu_list_table(cur.get("tabu_list"), L, k + 1, new_attr),
-            "Edge baru yang terbentuk oleh move ini masuk tabu list selama tabu tenure.",
+            "Tabu List",
+            tabu_df,
+            "Kondisi setelah iterasi ini. Edge yang baru terbentuk oleh "
+            "move masuk tabu list selama tabu tenure; move yang "
+            "membongkarnya ditolak (kecuali lolos aspirasi).",
         ))
 
-    return {
-        "summary": _summary(k, history, L),
-        "blocks": blocks,
-    }
+    else:
+
+        blocks.append(_text("**Tabu List:** kosong."))
+
+    return _make_view(
+        history, k, L, process, blocks,
+        extra_result=[(
+            "Jarak Terbaik Sejauh Ini",
+            _f(best_after) + record,
+        )],
+    )
 
 
 # ============================================================
@@ -1145,109 +1294,241 @@ def _sa_view(history, k, dist, labels):
 
     if k == 0:
 
-        return {
-            "summary": _summary(k, history, L),
-            "blocks": [_text(
-                "Iterasi 0 adalah solusi awal "
-                f"dengan suhu awal {_f(item.get('temperature'))}."
+        return _make_view(
+            history, k, L,
+            [(
+                "Keterangan",
+                "Ini rute awal dengan suhu awal "
+                f"{_f(item.get('temperature'))}. Belum ada move.",
             )],
-        }
+            extra_result=[(
+                "Jarak Terbaik Sejauh Ini",
+                _f(item.get("best_distance")),
+            )],
+        )
 
     prev = history[k - 1]
 
     route_before = _route_of(prev)
     distance_before = prev.get("distance")
 
-    move = item.get("move") or {}
+    i, j = _move_ij(item.get("move"))
 
-    blocks = []
+    removed, added, new_route = two_opt_move(route_before, i, j)
 
-    pairs = [
-        ("Suhu (T)", _f(item.get("temperature"), 4)),
-        ("Current Route", route_text(route_before, L)),
-        ("Current Distance", _f(distance_before)),
-    ]
+    delta = item["delta"]
+    candidate_distance = distance_before + delta
+    temperature = item.get("temperature")
 
-    if move:
+    if delta <= 0:
 
-        removed, added, new_route = two_opt_move(
-            route_before, move["i"], move["j"]
+        probability_text = "100% (lebih baik, pasti diterima)"
+
+    else:
+
+        probability_text = (
+            f"exp(−Δ/T) = exp(−{_f(delta)}/{_f(temperature, 4)}) "
+            f"= {_f(item.get('probability'), 4)}"
         )
 
-        candidate_distance = distance_before + item["delta"]
-
-        pairs += [
-            ("Candidate move (dipilih acak)", f"({move['i']}, {move['j']})"),
-            ("Edge dibuang", _edges(removed, L)),
-            ("Edge ditambah", _edges(added, L)),
-            ("Candidate Route", route_text(new_route, L)),
-            ("Candidate Distance", _f(candidate_distance)),
-            ("Δ = Candidate − Current", _signed(item["delta"])),
-        ]
-
-        if item["delta"] < 0:
-            pairs.append((
-                "Probabilitas diterima",
-                "1.0000 (lebih baik, pasti diterima)",
-            ))
-        else:
-            pairs.append((
-                "Probabilitas diterima",
-                f"exp(−Δ/T) = exp(−{_f(item['delta'])}/"
-                f"{_f(item.get('temperature'), 4)}) = "
-                f"{_f(item.get('probability'), 4)}",
-            ))
-
-    pairs += [
+    process = [
+        ("Suhu (T)", _f(temperature, 4)),
+        ("Rute Sebelumnya", route_text(route_before, L)),
+        (
+            "Move Acak",
+            f"{_reverse_text(route_before, i, j, L)}\n"
+            f"Edge dibuang: {_edges(removed, L)}\n"
+            f"Edge ditambah: {_edges(added, L)}",
+        ),
+        ("Rute Kandidat", route_text(new_route, L)),
+        (
+            "Rumus Hitung",
+            "Δ = jarak kandidat − jarak sekarang\n"
+            f"= {_f(candidate_distance)} − {_f(distance_before)}\n"
+            f"= {_signed(delta)}",
+        ),
+        ("Peluang Diterima", probability_text),
         (
             "Keputusan",
-            "DITERIMA" if item.get("accepted") else "DITOLAK (rute tetap)",
+            "DITERIMA (rute berganti ke kandidat)"
+            if item.get("accepted")
+            else "DITOLAK (rute tetap)",
         ),
-        ("New Route", route_text(_route_of(item), L)),
-        ("New Distance", _f(item.get("distance"))),
-        ("Best distance sejauh ini", _f(item.get("best_distance"))),
+        _change_line(distance_before, item.get("distance")),
     ]
 
-    blocks.append(_lines("Perhitungan / keputusan", pairs))
-
-    return {
-        "summary": _summary(k, history, L),
-        "blocks": blocks,
-    }
+    return _make_view(
+        history, k, L, process,
+        extra_result=[(
+            "Jarak Terbaik Sejauh Ini",
+            _f(item.get("best_distance")),
+        )],
+    )
 
 
 # ============================================================
 # LOCAL SEARCH (2-opt, 3-opt)
 # ============================================================
 
-def _local_edge_rows(move, labels):
-
-    rows = []
-
-    for item in move.get("removed_edges", []):
-
-        a, b = item["edge"]
-
-        rows.append({
-            "Keterangan": "Dibuang",
-            "Edge": _edge(a, b, labels),
-            "Jarak": _f(item["distance"]),
-        })
-
-    for item in move.get("added_edges", []):
-
-        a, b = item["edge"]
-
-        rows.append({
-            "Keterangan": "Ditambah",
-            "Edge": _edge(a, b, labels),
-            "Jarak": _f(item["distance"]),
-        })
-
-    return pd.DataFrame(rows)
+# Tabel kandidat hanya dibuat bila ukuran rute masih wajar.
+TWO_OPT_TABLE_LIMIT = 150
+THREE_OPT_TABLE_LIMIT = 40
 
 
-def _local_view(history, k, labels, strategy=None):
+def _local_candidates(method_type, route, dist):
+    """Semua kemungkinan move dari rute: [(delta, key), ...]."""
+
+    n = len(route) - 1
+
+    cands = []
+
+    if method_type == "2-opt":
+
+        if n > TWO_OPT_TABLE_LIMIT:
+            return None
+
+        for i in range(1, n - 1):
+
+            a, b = route[i - 1], route[i]
+
+            for j in range(i + 1, n):
+
+                c, e = route[j], route[j + 1]
+
+                delta = dist[a][c] + dist[b][e] - dist[a][b] - dist[c][e]
+
+                cands.append((delta, (i, j)))
+
+        return cands
+
+    if n > THREE_OPT_TABLE_LIMIT:
+        return None
+
+    for i in range(1, n - 1):
+
+        a, b1 = route[i - 1], route[i]
+
+        for j in range(i + 1, n):
+
+            b2, c1 = route[j - 1], route[j]
+
+            for k in range(j + 1, n + 1):
+
+                c2, e = route[k - 1], route[k]
+
+                removed = dist[a][b1] + dist[b2][c1] + dist[c2][e]
+
+                added = (
+                    dist[a][b2] + dist[b1][c1] + dist[c2][e],
+                    dist[a][b1] + dist[b2][c2] + dist[c1][e],
+                    dist[a][c2] + dist[c1][b2] + dist[b1][e],
+                    dist[a][b2] + dist[b1][c2] + dist[c1][e],
+                    dist[a][c1] + dist[c2][b1] + dist[b2][e],
+                    dist[a][c1] + dist[c2][b2] + dist[b1][e],
+                    dist[a][c2] + dist[c1][b1] + dist[b2][e],
+                )
+
+                for variant, cost in enumerate(added):
+                    cands.append((cost - removed, (i, j, k, variant)))
+
+    return cands
+
+
+def _local_candidate_row(method_type, route, key, delta, before, labels):
+
+    if method_type == "2-opt":
+
+        i, j = key
+
+        new_route = apply_2opt(route, (delta, i, j))
+
+        name = f"Balik {route_text(route[i:j + 1], labels)}"
+
+    else:
+
+        i, j, k, variant = key
+
+        new_route = apply_3opt(route, (delta, i, j, k, variant))
+
+        name = f"{RECONNECTIONS_3OPT[variant]} @ posisi ({i}, {j}, {k})"
+
+    return {
+        "Move": name,
+        "Rute Baru": route_text(new_route, labels),
+        "Jarak Baru": _f(before + delta),
+        "Δ": _signed(delta),
+    }
+
+
+def _local_candidate_block(
+    method_type, route_before, dist, before, chosen_key, labels,
+    strategy=None, limit=10
+):
+
+    cands = _local_candidates(method_type, route_before, dist)
+
+    if cands is None:
+
+        return _text(
+            "_Tabel kandidat tidak ditampilkan karena jumlah node terlalu "
+            "besar._"
+        )
+
+    ordered = sorted(cands, key=lambda c: c[0])
+
+    shown = ordered[:limit]
+
+    if not any(key == chosen_key for _, key in shown):
+
+        shown += [c for c in ordered if c[1] == chosen_key]
+
+    rows = [{
+        "Move": "Rute saat ini",
+        "Rute Baru": route_text(route_before, labels),
+        "Jarak Baru": _f(before),
+        "Δ": "",
+        "Dipilih": "",
+    }]
+
+    for delta, key in shown:
+
+        row = _local_candidate_row(
+            method_type, route_before, key, delta, before, labels
+        )
+
+        row["Dipilih"] = "✅" if key == chosen_key else ""
+
+        rows.append(row)
+
+    if strategy == "first":
+        how = (
+            "Strategy first: dipilih move pertama yang ditemukan dan "
+            "memperbaiki rute, jadi belum tentu yang terkecil."
+        )
+    else:
+        how = (
+            "Strategy best: dipilih move dengan jarak baru terkecil "
+            "dari semua kemungkinan."
+        )
+
+    return _table(
+        "Tabel Kandidat Move",
+        pd.DataFrame(rows),
+        f"Menampilkan {len(shown)} dari {len(ordered)} kemungkinan move, "
+        f"diurutkan dari jarak baru terkecil. {how}",
+    )
+
+
+def _edge_sum(items, labels):
+
+    return ", ".join(
+        f"{_edge(item['edge'][0], item['edge'][1], labels)} "
+        f"({_f(item['distance'])})"
+        for item in items
+    )
+
+
+def _local_view(history, k, dist, labels, strategy=None):
 
     L = labels
 
@@ -1255,135 +1536,114 @@ def _local_view(history, k, labels, strategy=None):
 
     move = item.get("move")
 
-    # ---------------- iterasi 0: rute awal ----------------
-
     if k == 0 or not move:
 
-        return {
-            "summary": _summary(k, history, L),
-            "blocks": [_text(
-                "Iterasi 0 adalah **rute awal (initial route)**. "
-                "Belum ada move yang diterapkan; pencarian dimulai "
-                "dari rute ini."
+        return _make_view(
+            history, k, L,
+            [(
+                "Keterangan",
+                "Ini rute awal. Belum ada move yang diterapkan; "
+                "pencarian dimulai dari rute ini.",
             )],
-        }
+        )
 
     prev = history[k - 1]
 
-    removed = move.get("removed_edges", [])
-    added = move.get("added_edges", [])
-
-    positions = move.get("positions", {})
+    route_before = _route_of(prev)
 
     before = move.get("distance_before", prev.get("distance"))
     after = move.get("distance_after", item.get("distance"))
 
-    blocks = []
+    positions = move.get("positions", {})
 
-    # ---------------- kondisi awal ----------------
-
-    blocks.append(_lines("Kondisi awal iterasi", [
-        ("Current Route", route_text(_route_of(prev), L)),
-        ("Current Distance", _f(before)),
-    ]))
-
-    # ---------------- move terpilih ----------------
-
-    pairs = [
-        ("Jenis move", str(move.get("type", "-"))),
-        (
-            "Posisi pada rute",
-            ", ".join(f"{key} = {value}" for key, value in positions.items())
-            + " (urutan dimulai dari 0)",
-        ),
-    ]
-
-    if "reversed_segment" in move:
-
-        segment = list(move["reversed_segment"])
-
-        pairs.append((
-            "Segmen yang dibalik",
-            f"{route_text(segment, L)}  →  {route_text(segment[::-1], L)}",
-        ))
-
-    if "reconnection" in move:
-
-        pairs.append((
-            "Penyambungan ulang",
-            f"{move['reconnection']} (variant {move.get('variant')})",
-        ))
-
-        for name, segment in (move.get("segments") or {}).items():
-
-            pairs.append((f"Segmen {name}", route_text(list(segment), L)))
-
-    blocks.append(_lines("Move yang dipilih", pairs))
-
-    if "reconnection" in move:
-
-        blocks.append(_text(
-            "_Keterangan: A, B, C, D adalah potongan rute; "
-            "tanda ' berarti potongan itu dibalik urutannya._"
-        ))
-
-    # ---------------- edge ----------------
-
-    blocks.append(_table(
-        "Edge yang dibuang dan ditambahkan",
-        _local_edge_rows(move, L),
-    ))
-
-    # ---------------- perhitungan ----------------
+    removed = move.get("removed_edges", [])
+    added = move.get("added_edges", [])
 
     removed_cost = move.get("removed_cost")
     added_cost = move.get("added_cost")
     delta = move.get("delta")
 
-    blocks.append(_lines("Perhitungan", [
-        (
-            "Total jarak edge dibuang",
-            " + ".join(_f(e["distance"]) for e in removed)
-            + f" = {_f(removed_cost)}",
-        ),
-        (
-            "Total jarak edge ditambah",
-            " + ".join(_f(e["distance"]) for e in added)
-            + f" = {_f(added_cost)}",
-        ),
-        (
-            "Δ = ditambah − dibuang",
-            f"{_f(added_cost)} − {_f(removed_cost)} = {_signed(delta)}",
-        ),
-    ]))
+    is_3opt = "reconnection" in move
 
-    # ---------------- hasil ----------------
+    # ---- deskripsi move
 
-    if strategy == "best":
+    if is_3opt:
 
-        reason = (
-            "Δ negatif (rute lebih pendek). Strategy best: dipilih move "
-            "dengan perbaikan terbesar dari semua kemungkinan move."
+        segments = move.get("segments") or {}
+
+        move_text = (
+            f"3-opt, penyambungan {move['reconnection']} "
+            f"pada posisi ({positions.get('i')}, {positions.get('j')}, "
+            f"{positions.get('k')})"
         )
 
-    elif strategy == "first":
+        for name, segment in segments.items():
+            move_text += f"\nSegmen {name}: {route_text(list(segment), L)}"
 
-        reason = (
-            "Δ negatif (rute lebih pendek). Strategy first: dipilih move "
-            "pertama yang ditemukan dan memperbaiki rute."
+        move_text += (
+            "\n(A dan D = bagian rute yang tetap; tanda ' = segmen dibalik)"
+        )
+
+        method_type = "3-opt"
+
+        chosen_key = (
+            positions.get("i"), positions.get("j"),
+            positions.get("k"), move.get("variant"),
         )
 
     else:
 
+        i, j = positions.get("i"), positions.get("j")
+
+        move_text = (
+            "2-opt, "
+            f"{_reverse_text(route_before, i, j, L)} "
+            f"(posisi {i}–{j})"
+        )
+
+        method_type = "2-opt"
+
+        chosen_key = (i, j)
+
+    # ---- alasan
+
+    if strategy == "first":
+        reason = (
+            "Δ negatif, rute lebih pendek. Strategy first: ini move "
+            "pertama yang ditemukan dan memperbaiki rute."
+        )
+    elif strategy == "best":
+        reason = (
+            "Δ negatif, rute lebih pendek. Strategy best: ini move "
+            "dengan perbaikan terbesar dari semua kemungkinan."
+        )
+    else:
         reason = "Δ negatif, sehingga rute menjadi lebih pendek."
 
-    blocks.append(_lines("Hasil iterasi", [
-        ("New Route", route_text(_route_of(item), L)),
-        ("Distance sebelum", _f(before)),
-        ("Distance sesudah", _f(after)),
-        ("Δ Distance", _signed(None if before is None or after is None else after - before)),
-        ("Alasan diterima", reason),
-    ]))
+    process = [
+        ("Rute Sebelumnya", route_text(route_before, L)),
+        ("Move Dipilih", move_text),
+        (
+            "Edge Dibuang",
+            f"{_edge_sum(removed, L)} → total {_f(removed_cost)}",
+        ),
+        (
+            "Edge Ditambah",
+            f"{_edge_sum(added, L)} → total {_f(added_cost)}",
+        ),
+        (
+            "Rumus Hitung",
+            "Δ = total edge ditambah − total edge dibuang\n"
+            f"= {_f(added_cost)} − {_f(removed_cost)}\n"
+            f"= {_signed(delta)}",
+        ),
+        ("Alasan", reason),
+        _change_line(before, after),
+    ]
+
+    blocks = [_local_candidate_block(
+        method_type, route_before, dist, before, chosen_key, L, strategy
+    )]
 
     if k == len(history) - 1:
 
@@ -1393,28 +1653,22 @@ def _local_view(history, k, labels, strategy=None):
             "batas **max_iter** tercapai."
         ))
 
-    return {
-        "summary": _summary(k, history, L),
-        "blocks": blocks,
-    }
+    return _make_view(history, k, L, process, blocks)
 
 
 # ============================================================
-# GENERIC (2-opt / 3-opt / lainnya)
+# GENERIC (algoritma lain)
 # ============================================================
 
 def _generic_view(history, k, labels):
 
     item = history[k]
 
-    pairs = []
+    process = []
 
     for key, value in item.items():
 
-        if key == "iteration":
-            continue
-
-        if key in ("route", "tour"):
+        if key in ("iteration", "route", "tour", "distance"):
             continue
 
         if isinstance(value, (list, dict)) and not value:
@@ -1423,14 +1677,18 @@ def _generic_view(history, k, labels):
         if isinstance(value, float):
             value = _f(value)
 
-        pairs.append((key.replace("_", " ").title(), str(value)))
+        process.append((key.replace("_", " ").title(), str(value)))
 
-    blocks = [_lines("Informasi iterasi", pairs)] if pairs else []
+    if _route_of(item) is None:
 
-    return {
-        "summary": _summary(k, history, labels),
-        "blocks": blocks,
-    }
+        return {
+            "title": str(_iter_no(history, k)),
+            "result": [("Total Jarak", _f(item.get("distance")))],
+            "process": process,
+            "blocks": [],
+        }
+
+    return _make_view(history, k, labels, process)
 
 
 # ============================================================
@@ -1439,12 +1697,13 @@ def _generic_view(history, k, labels):
 
 def build_iteration_view(kind, history, k, dist, labels, strategy=None):
     """
-    Detail perhitungan iterasi ke-k.
+    Detail iterasi ke-k dalam bentuk yang sama untuk semua algoritma:
 
-    Return dict:
         {
-            "summary": [(label, nilai), ...],
-            "blocks":  [ {"kind": "lines" | "table" | "text", ...}, ... ]
+            "title":   nomor iterasi,
+            "result":  [(label, nilai), ...]   # Hasil Iterasi Ini
+            "process": [(label, nilai), ...]   # Proses & Perhitungan
+            "blocks":  [ {"kind": "table" | "text", ...}, ... ]
         }
     """
 
@@ -1453,7 +1712,9 @@ def build_iteration_view(kind, history, k, dist, labels, strategy=None):
     if not isinstance(item, dict):
 
         return {
-            "summary": [("Iteration", str(k)), ("Info", str(item))],
+            "title": str(k),
+            "result": [("Info", str(item))],
+            "process": [],
             "blocks": [],
         }
 
@@ -1463,7 +1724,7 @@ def build_iteration_view(kind, history, k, dist, labels, strategy=None):
             return _constructive_view(kind, history, k, dist, labels)
 
         if kind == "local":
-            return _local_view(history, k, labels, strategy)
+            return _local_view(history, k, dist, labels, strategy)
 
         if kind == "tabu":
             return _tabu_view(history, k, dist, labels)
@@ -1474,11 +1735,19 @@ def build_iteration_view(kind, history, k, dist, labels, strategy=None):
     except Exception as error:   # jangan sampai UI gagal total
 
         return {
-            "summary": _summary(k, history, labels)
-            if _route_of(item) is not None
-            else [("Iteration", str(k))],
+            "title": str(_iter_no(history, k)),
+            "result": (
+                [
+                    ("Rute Saat Ini", route_text(_route_of(item), labels)),
+                    ("Total Jarak", _f(item.get("distance"))),
+                ]
+                if _route_of(item) is not None
+                else [("Total Jarak", _f(item.get("distance")))]
+            ),
+            "process": [],
             "blocks": [_text(
-                f"_Detail perhitungan tidak dapat diturunkan: {error}_"
+                f"_Detail perhitungan tidak dapat diturunkan: "
+                f"{type(error).__name__}: {error}_"
             )],
         }
 
@@ -1510,6 +1779,11 @@ def build_iteration_table(kind, history, dist, labels):
             row["Route"] = route_text(route, labels)
 
         distance = item.get("distance")
+
+        # NN: tampilkan panjang jalur (tanpa kembali ke start) agar
+        # sama dengan Detail Iterasi
+        if kind == "nn" and route is not None:
+            distance = _path_len(route, dist)
 
         row["Distance"] = _f(distance)
 
@@ -1567,7 +1841,7 @@ def build_iteration_table(kind, history, dist, labels):
                     mv = item.get("move") or {}
 
                     removed, added, _ = two_opt_move(
-                        _route_of(history[k - 1]), mv["i"], mv["j"]
+                        _route_of(history[k - 1]), *_move_ij(mv)
                     )
 
                     row["Move"] = (
@@ -1591,7 +1865,7 @@ def build_iteration_table(kind, history, dist, labels):
                     mv = item.get("move") or {}
 
                     removed, added, _ = two_opt_move(
-                        _route_of(history[k - 1]), mv["i"], mv["j"]
+                        _route_of(history[k - 1]), *_move_ij(mv)
                     )
 
                     row["Move"] = (
@@ -1745,36 +2019,42 @@ def find_route_in_step(df, item):
     return None
 
 
+def _bullets(pairs):
+    """Daftar poin 'Label : nilai'. Nilai multi-baris tetap dalam satu poin."""
+
+    lines = []
+
+    for label, value in pairs:
+
+        text = str(value).replace("\n", "  \n  ")
+
+        lines.append(f"- **{label}** : {text}")
+
+    return "\n".join(lines)
+
+
 def render_view(view):
-    """Tampilkan hasil build_iteration_view()."""
+    """Tampilkan hasil build_iteration_view() dengan urutan yang tetap."""
 
-    st.markdown(
-        "#### Detail Iterasi"
-    )
+    st.markdown(f"#### Detail Iterasi : {view['title']}")
 
-    st.markdown(
-        "  \n".join(
-            f"**{label}** : {value}"
-            for label, value in view["summary"]
-        )
-    )
+    st.markdown("##### Hasil Iterasi Ini")
+
+    st.markdown(_bullets(view["result"]))
+
+    if view.get("process"):
+
+        st.markdown("##### Proses & Perhitungan")
+
+        st.caption("Bagaimana rute di atas didapatkan")
+
+        st.markdown(_bullets(view["process"]))
 
     for block in view["blocks"]:
 
         if block["kind"] == "text":
 
             st.markdown(block["text"])
-
-        elif block["kind"] == "lines":
-
-            st.markdown(f"##### {block['heading']}")
-
-            st.markdown(
-                "  \n".join(
-                    f"**{label}** : {value}"
-                    for label, value in block["lines"]
-                )
-            )
 
         elif block["kind"] == "table":
 
@@ -1808,7 +2088,7 @@ def highlight_selected_row(table, selected):
     def _color(row):
 
         style = (
-            "background-color: rgba(108, 92, 231, 0.28)"
+            "background-color: #CDE3E8; color: #2D120D; font-weight: 600"
             if row.name == selected
             else ""
         )
@@ -1857,10 +2137,12 @@ def render_independent_result(
 
     st.subheader(method)
 
-    st.info(
-        ALGORITHM_EXPLANATIONS.get(
-            method,
-            ALGORITHMS[method]["description"]
+    callout(
+        html.escape(
+            ALGORITHM_EXPLANATIONS.get(
+                method,
+                ALGORITHMS[method]["description"]
+            )
         )
     )
 
@@ -2839,10 +3121,10 @@ def start_note_of(method, initial_solutions):
 # Cukup isi nodes + (distance_matrix atau coords). Sisanya opsional.
 
 TABU_TASK_DATA = {
-    "nodes": None,
+    "nodes": ["1", "2", "3", "4", "5", "6"],
     "distance_matrix": None,
-    "coords": None,
-    "initial_route": None,
+    "coords": [(2, 33), (652, 32), (99, 368), (681, 195), (501, 106), (188, 664)],
+    "initial_route": ["3", "2", "4", "1", "5", "6", "3"],
     "tabu_tenure": 3,
     "max_iter": 10,
     "metric": "euclidean",
@@ -3183,16 +3465,6 @@ def render_tabu_task():
             key="tabutask_max_iter"
         )
 
-        n_show = st.number_input(
-            "Jumlah iterasi yang diilustrasikan",
-            min_value=1,
-            max_value=100,
-            value=3,
-            step=1,
-            key="tabutask_show",
-            help="Tugas mewajibkan minimal 3 iterasi."
-        )
-
     if st.button(
         "▶ Run Tabu Search (Tugas)",
         type="primary",
@@ -3222,7 +3494,6 @@ def render_tabu_task():
                 "df": task_df,
                 "dist": task_dist,
                 "result": result,
-                "n_show": int(n_show),
                 "dummy": data is TABU_TASK_EXAMPLE
             }
 
@@ -3249,7 +3520,6 @@ def render_tabu_task():
     out_df = output["df"]
     out_dist = output["dist"]
     out_result = output["result"]
-    out_labels = out_df["node"].astype(str).tolist()
 
     render_independent_result(
         out_df,
@@ -3259,36 +3529,6 @@ def render_tabu_task():
         key_prefix="tabutask",
         run_id=st.session_state.tabu_task_run_id
     )
-
-    # ---------------- ilustrasi N iterasi pertama ----------------
-
-    history = out_result["history"] or []
-
-    # jumlah iterasi mengikuti isian terbaru (tanpa perlu Run ulang)
-    shown = min(int(n_show), len(history) - 1)
-
-    st.divider()
-
-    st.subheader(f"Ilustrasi Tabu Search — {shown} iterasi pertama")
-
-    st.caption(
-        "Setiap iterasi menampilkan current route, tabu list, seluruh "
-        "candidate move, selected move, new route, dan tabu list sesudahnya."
-    )
-
-    for k in range(1, shown + 1):
-
-        with st.expander(f"ITERATION {k}", expanded=True):
-
-            render_view(
-                build_iteration_view(
-                    "tabu",
-                    history,
-                    k,
-                    out_dist,
-                    out_labels
-                )
-            )
 
     st.subheader("Hasil Akhir")
 
@@ -3332,10 +3572,12 @@ def render_hybrid_result(df, dist_matrix, combo, index, run_id):
         else 0.0
     )
 
-    st.info(
-        f"Alur: Start Node **{start_label}** → "
-        f"**{stage1['method']}** (distance {stage1['final_distance']:.2f}) → "
-        f"**{stage2['method']}** (distance {stage2['final_distance']:.2f})"
+    callout(
+        f"Alur: Start Node <b>{html.escape(start_label)}</b> → "
+        f"<b>{html.escape(stage1['method'])}</b> "
+        f"(distance {stage1['final_distance']:.2f}) → "
+        f"<b>{html.escape(stage2['method'])}</b> "
+        f"(distance {stage2['final_distance']:.2f})"
     )
 
     col1, col2, col3, col4 = st.columns(4)
