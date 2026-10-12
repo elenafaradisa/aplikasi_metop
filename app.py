@@ -3,6 +3,7 @@ import pandas as pd
 import math
 import random
 import time
+from pathlib import Path
 
 from algorithms.base import (
     build_distance_matrix,
@@ -54,14 +55,30 @@ from utils.comparison import (
 # PAGE CONFIG
 # ============================================================
 
+BASE_DIR = Path(__file__).parent
+
+# Logo: simpan gambar di assets/logo.png
+LOGO_PATH = BASE_DIR / "assets" / "logo.png"
+
+# Dataset bawaan (CSV tanpa header: kolom x, y)
+DATASET_LARGE = BASE_DIR / "dataset" / "large.csv"
+
 st.set_page_config(
     page_title="TSP Learning & Optimization",
-    page_icon="🧭",
+    page_icon=str(LOGO_PATH) if LOGO_PATH.exists() else "🧭",
     layout="wide"
 )
 
-# Tema "Botticelli Mist": dasar biru-abu lembut (turunan Botticelli #CDE3E8), tanpa kuning.
-# Teks Coffee Bean #2D120D; aksen Rosewood #6B0B0C; kartu putih agar menonjol lembut.
+if LOGO_PATH.exists() and hasattr(st, "logo"):
+
+    try:
+        st.logo(str(LOGO_PATH), size="large")
+    except TypeError:               # Streamlit versi lama (tanpa parameter size)
+        st.logo(str(LOGO_PATH))
+
+# Tema "Botticelli Mist": dasar biru-abu lembut (turunan Botticelli #CDE3E8).
+# Teks Coffee Bean #2D120D; aksen Rosewood #6B0B0C; kuning #FFFBCA hanya
+# sebagai aksen kecil (highlight judul, garis bawah metrik, baris terpilih).
 st.markdown(
     """
     <style>
@@ -76,6 +93,8 @@ st.markdown(
         --botticelli: #CDE3E8;
         --botticelli-soft: #E1EEF1;
         --teal: #4F8FA3;
+        --yellow: #FFFBCA;
+        --yellow-deep: #E9DC7A;
     }
 
     /* Cadangan jika .streamlit/config.toml belum dipasang */
@@ -88,6 +107,21 @@ st.markdown(
         letter-spacing: 0.2px;
     }
     h4, h5 { color: var(--coffee) !important; }
+
+    /* Highlight judul di halaman utama (kuning lembut + garis rosewood) */
+    [data-testid="stMain"] h2, section.main h2,
+    [data-testid="stMain"] h3, section.main h3 {
+        background: linear-gradient(90deg, var(--yellow) 0%, rgba(255, 251, 202, 0) 85%);
+        border-left: 5px solid var(--rosewood);
+        padding: 0.25rem 0.75rem !important;
+        border-radius: 4px;
+    }
+    /* Judul tabel / blok hasil */
+    [data-testid="stMain"] h4, section.main h4 {
+        border-bottom: 2px solid var(--yellow-deep);
+        display: inline-block;
+        padding-bottom: 0.1rem !important;
+    }
 
     /* Garis pemisah lembut */
     hr { border-color: rgba(107, 11, 12, 0.18) !important; }
@@ -124,6 +158,7 @@ st.markdown(
         background: var(--surface);
         border: 1px solid rgba(45, 18, 13, 0.08);
         border-left: 4px solid var(--rosewood);
+        border-bottom: 3px solid var(--yellow-deep);
         border-radius: 10px;
         padding: 0.6rem 0.9rem;
         box-shadow: 0 1px 3px rgba(45, 18, 13, 0.08);
@@ -451,7 +486,7 @@ def extract_history(result):
 
 
 # ------------------------------------------------------------
-# INITIAL SOLUTION RESOLVER
+# INITIALIZATION RESOLVER
 # ------------------------------------------------------------
 
 def resolve_initial(
@@ -622,7 +657,7 @@ def _edges(edges, labels):
 
 
 def _change(before, after):
-    """'284.48 ➔ 265.70  (−18.78)'"""
+    """'284.48 ➔ **265.70**  (−18.78)'  (angka hasil akhir dibold)"""
 
     delta = (
         None
@@ -630,7 +665,7 @@ def _change(before, after):
         else float(after) - float(before)
     )
 
-    return f"{_f(before)} ➔ {_f(after)}  ({_signed(delta)})"
+    return f"{_f(before)} ➔ **{_f(after)}**  ({_signed(delta)})"
 
 
 def two_opt_move(route, i, j):
@@ -728,8 +763,53 @@ def _result_block(history, k, labels, note=""):
 
     return _lines("Hasil Iterasi Ini", [
         ("Rute Saat Ini", route_text(_route_of(item), labels)),
-        ("Total Jarak", _f(item.get("distance")) + note),
+        ("Total Jarak", f"**{_f(item.get('distance'))}**" + note),
     ])
+
+
+# Rute pada tabel iterasi dipersingkat bila lebih panjang dari ini
+ROUTE_TABLE_FULL_LIMIT = 60
+
+
+def route_text_table(route, labels):
+    """Teks rute untuk tabel iterasi; dipotong jika rute sangat panjang."""
+
+    if route is None or len(route) <= ROUTE_TABLE_FULL_LIMIT:
+        return route_text(route, labels)
+
+    head = " → ".join(labels[int(i)] for i in route[:5])
+    tail = " → ".join(labels[int(i)] for i in route[-3:])
+
+    return f"{head} → … → {tail}  ({len(route) - 1} node)"
+
+
+def _insertion_step(history, k, dist):
+    """
+    Node terpilih + posisi sisip + tambahan jarak untuk satu langkah
+    insertion, dihitung langsung dari dua rute berurutan (O(n)).
+    Dipakai tabel ringkas agar tetap cepat pada dataset besar.
+    """
+
+    cur = _route_of(history[k])
+
+    if k == 0:
+
+        return {"selected": cur[1], "after": None, "before": None, "increase": None}
+
+    prev_nodes = set(_route_of(history[k - 1]))
+
+    selected = next(v for v in cur[:-1] if v not in prev_nodes)
+
+    position = cur.index(selected)
+
+    after, before = cur[position - 1], cur[position + 1]
+
+    return {
+        "selected": selected,
+        "after": after,
+        "before": before,
+        "increase": dist[after][selected] + dist[selected][before] - dist[after][before],
+    }
 
 
 def _limit_rows(rows, limit=CANDIDATE_LIMIT):
@@ -1546,9 +1626,9 @@ def _tabu_view(history, k, dist, labels):
     pairs.append((
         "Jarak Terbaik Sejauh Ini",
         (
-            f"{_f(best_before)} ➔ {_f(best_after)}  (rekor baru)"
+            f"{_f(best_before)} ➔ **{_f(best_after)}**  (rekor baru)"
             if best_after < best_before
-            else f"{_f(best_before)}  (tidak berubah)"
+            else f"**{_f(best_before)}**  (tidak berubah)"
         ),
     ))
 
@@ -1762,7 +1842,7 @@ def _sa_view(history, k, dist, labels):
     pairs.append(("Perubahan Jarak", _change(distance_before, item.get("distance"))))
 
     if best_distance is not None:
-        pairs.append(("Jarak Terbaik Sejauh Ini", _f(best_distance)))
+        pairs.append(("Jarak Terbaik Sejauh Ini", f"**{_f(best_distance)}**"))
 
     blocks.append(_lines("Proses & Perhitungan", pairs))
 
@@ -1915,7 +1995,7 @@ def build_iteration_table(kind, history, dist, labels):
         row = {"Iterasi": str(item.get("iteration", k))}
 
         if route is not None:
-            row["Route"] = route_text(route, labels)
+            row["Route"] = route_text_table(route, labels)
 
         distance = item.get("distance")
 
@@ -1930,22 +2010,21 @@ def build_iteration_table(kind, history, dist, labels):
 
             if kind == "nn" and k > 0:
 
-                d = _derive_nn(history, k, dist)
-
-                row["Node dipilih"] = labels[d["selected"]]
+                # node yang dipilih = node terakhir pada rute iterasi ini
+                row["Node dipilih"] = labels[route[-1]]
 
             elif kind in ("ni", "fi", "ai"):
 
-                d = _derive_insertion(kind, history, k, dist)
+                step = _insertion_step(history, k, dist)
 
-                row["Node dipilih"] = labels[d["selected"]]
+                row["Node dipilih"] = labels[step["selected"]]
 
-                if d["type"] == "insert":
+                if step["after"] is not None:
 
                     row["Disisipkan antara"] = (
-                        f"{labels[d['after']]} dan {labels[d['before']]}"
+                        f"{labels[step['after']]} dan {labels[step['before']]}"
                     )
-                    row["Tambahan jarak"] = _f(d["increase"])
+                    row["Tambahan jarak"] = _f(step["increase"])
 
             elif kind == "local":
 
@@ -2088,6 +2167,13 @@ ALGORITHM_EXPLANATIONS = {
 # kecil-menengah agar history tidak membengkak.
 DETAIL_NODE_LIMIT = 100
 
+# 3-opt berkompleksitas O(n^3) per iterasi; di atas batas ini dianggap
+# terlalu lama (1000 node = beberapa menit untuk SATU iterasi).
+THREE_OPT_MAX_NODES = 150
+
+# Distance matrix hanya ditampilkan bila tidak terlalu besar
+DISTANCE_MATRIX_DISPLAY_LIMIT = 100
+
 
 # ------------------------------------------------------------
 # HISTORY
@@ -2162,7 +2248,7 @@ def find_route_in_step(df, item):
 def render_view(view):
     """Tampilkan hasil build_iteration_view() dengan susunan seragam."""
 
-    st.markdown(f"#### {view['title']}")
+    st.markdown(f"### {view['title']}")
 
     for block in view["blocks"]:
 
@@ -2172,7 +2258,7 @@ def render_view(view):
 
         elif block["kind"] == "lines":
 
-            st.markdown(f"**{block['heading']}**")
+            st.markdown(f"#### {block['heading']}")
 
             st.markdown(
                 "\n".join(
@@ -2183,7 +2269,7 @@ def render_view(view):
 
         elif block["kind"] == "table":
 
-            st.markdown(f"**{block['heading']}**")
+            st.markdown(f"#### {block['heading']}")
 
             if block.get("caption"):
                 st.caption(block["caption"])
@@ -2205,15 +2291,12 @@ def render_view(view):
 
 
 def highlight_selected_row(table, selected):
-    """Beri warna pada baris iterasi yang sedang dipilih."""
-
-    if selected < 0:
-        return table
+    """Warna kuning lembut pada baris iterasi terpilih; kolom Distance dibold."""
 
     def _color(row):
 
         style = (
-            "background-color: #CDE3E8; font-weight: 600"
+            "background-color: #FFFBCA; font-weight: 600"
             if row.name == selected
             else ""
         )
@@ -2221,7 +2304,20 @@ def highlight_selected_row(table, selected):
         return [style] * len(row)
 
     try:
-        return table.style.apply(_color, axis=1)
+
+        styled = table.style
+
+        if selected >= 0:
+            styled = styled.apply(_color, axis=1)
+
+        if "Distance" in table.columns:
+            styled = styled.set_properties(
+                subset=["Distance"],
+                **{"font-weight": "700"}
+            )
+
+        return styled
+
     except Exception:
         return table
 
@@ -2236,7 +2332,8 @@ def render_independent_result(
     result,
     index,
     key_prefix="independent",
-    run_id=None
+    run_id=None,
+    heading_level=2
 ):
     """
     Urutan tampilan:
@@ -2260,7 +2357,10 @@ def render_independent_result(
 
     # -------------------- 1. judul + penjelasan --------------------
 
-    st.subheader(method)
+    if heading_level <= 2:
+        st.header(method)
+    else:
+        st.subheader(method)
 
     st.info(
         ALGORITHM_EXPLANATIONS.get(
@@ -2347,7 +2447,7 @@ def render_independent_result(
 
     with col_table:
 
-        st.markdown("**Tabel Iterasi**")
+        st.markdown("#### Tabel Iterasi")
 
         if history:
 
@@ -2401,6 +2501,8 @@ def render_independent_result(
             )
 
     with col_viz:
+
+        st.markdown("#### Visualisasi Rute")
 
         plot_route_data = result["route"]
 
@@ -2621,6 +2723,14 @@ def execute_independent_algorithm(
     parameters=None
 ):
 
+    if method == "3-opt" and len(dist_matrix) > THREE_OPT_MAX_NODES:
+
+        raise ValueError(
+            f"3-opt terlalu berat untuk {len(dist_matrix)} node "
+            f"(kompleksitas O(n³); batas {THREE_OPT_MAX_NODES} node). "
+            "Gunakan 2-opt, Simulated Annealing, atau Tabu Search."
+        )
+
     start_time = time.perf_counter()
 
     result = run_algorithm(
@@ -2820,7 +2930,7 @@ def previous_route_algorithms(method, selected_algorithms):
 
 
 # ------------------------------------------------------------
-# PANEL: INITIAL SOLUTION (satu algoritma)
+# PANEL: INITIALIZATION (satu algoritma)
 # ------------------------------------------------------------
 
 def render_initial_panel(method, selected_algorithms, df):
@@ -3406,25 +3516,14 @@ def prepare_task_data(data):
     return df_task, dist, route
 
 
-def render_hybrid_placeholder():
-
-    st.subheader(
-        "Hybrid"
-    )
-
-    st.info(
-        "Masukkan dataset terlebih dahulu untuk menggunakan Hybrid."
-    )
-
-
 def render_tabu_task():
 
-    st.subheader("Tabu Search — Data Tugas")
+    st.header("Tabu Search — Data Tugas")
 
     st.caption(
-        "Tab khusus untuk data dari soal tugas. Tab ini tidak memakai "
+        "Halaman khusus untuk data dari soal tugas. Halaman ini tidak memakai "
         "dataset pada bagian Input Data dan tidak terpengaruh sidebar. "
-        "Tabu Search yang dipakai sama dengan tab lainnya."
+        "Tabu Search yang dipakai sama dengan mode lainnya."
     )
 
     data = TABU_TASK_DATA
@@ -3514,7 +3613,7 @@ def render_tabu_task():
         ) + ["Generate Random", "Manual"]
 
         source = st.selectbox(
-            "Initial solution",
+            "Initialization",
             source_options,
             key="tabutask_source"
         )
@@ -3676,7 +3775,7 @@ def render_tabu_task():
 # HYBRID
 # ============================================================
 #
-# Tahap 1: metode Constructive membangun initial solution.
+# Tahap 1: metode Constructive membangun initialization (rute awal).
 # Tahap 2: metode Optimization (Local Search / Metaheuristic)
 #          memperbaiki rute dari tahap 1.
 
@@ -3747,7 +3846,7 @@ def render_hybrid_result(df, dist_matrix, combo, index, run_id):
 
     st.divider()
 
-    st.markdown("### Tahap 1 — Initial Solution")
+    st.header("Tahap 1 — Initialization")
 
     render_independent_result(
         df,
@@ -3755,12 +3854,13 @@ def render_hybrid_result(df, dist_matrix, combo, index, run_id):
         stage1,
         index,
         key_prefix=f"hybrid_{index}_s1",
-        run_id=run_id
+        run_id=run_id,
+        heading_level=3
     )
 
     st.divider()
 
-    st.markdown("### Tahap 2 — Optimization")
+    st.header("Tahap 2 — Optimization")
 
     render_independent_result(
         df,
@@ -3768,19 +3868,13 @@ def render_hybrid_result(df, dist_matrix, combo, index, run_id):
         stage2,
         index,
         key_prefix=f"hybrid_{index}_s2",
-        run_id=run_id
+        run_id=run_id,
+        heading_level=3
     )
 
 
-def render_hybrid(df, dist_matrix):
-
-    st.subheader("Hybrid")
-
-    st.caption(
-        "Gabungkan metode Constructive (membangun initial solution) dengan "
-        "metode Optimization (memperbaikinya). Rute hasil tahap 1 menjadi "
-        "initial route tahap 2."
-    )
+def hybrid_sidebar(df):
+    """Pengaturan Hybrid di sidebar. Return dict konteks untuk render_hybrid."""
 
     labels = df["node"].tolist()
 
@@ -3795,27 +3889,21 @@ def render_hybrid(df, dist_matrix):
     ]
 
 
-    # ---------------- 1. kombinasi ----------------
+    # ---------------- algoritma & kombinasi ----------------
 
-    st.markdown("#### 1. Pilih Kombinasi")
+    st.subheader("Algorithm")
 
-    col1, col2 = st.columns(2)
+    inits = st.multiselect(
+        "Initialization (Constructive)",
+        constructive_methods,
+        key="hybrid_inits"
+    )
 
-    with col1:
-
-        inits = st.multiselect(
-            "Initial Solution (Constructive)",
-            constructive_methods,
-            key="hybrid_inits"
-        )
-
-    with col2:
-
-        optimizers = st.multiselect(
-            "Optimization",
-            optimizer_methods,
-            key="hybrid_optimizers"
-        )
+    optimizers = st.multiselect(
+        "Optimization",
+        optimizer_methods,
+        key="hybrid_optimizers"
+    )
 
     pairs = [(i, o) for i in inits for o in optimizers]
 
@@ -3851,47 +3939,48 @@ def render_hybrid(df, dist_matrix):
     else:
 
         st.caption(
-            "Pilih minimal satu Initial Solution dan satu Optimization."
+            "Pilih minimal satu Initialization dan satu Optimization."
         )
 
 
-    # ---------------- 2. start node + parameter ----------------
+    # ---------------- initialization (start node) ----------------
 
-    col_start, col_params = st.columns(2)
+    st.divider()
 
-    with col_start:
+    st.subheader("Initialization")
 
-        st.markdown("#### 2. Start Node")
+    start_choice = st.selectbox(
+        "Start Node",
+        labels + [RANDOM_NODE],
+        key="hybrid_start_choice",
+        help="Node awal yang dipakai metode Constructive."
+    )
 
-        start_choice = st.selectbox(
-            "Start Node",
-            labels + [RANDOM_NODE],
-            key="hybrid_start_choice",
-            help="Node awal yang dipakai metode Constructive."
+    if start_choice == RANDOM_NODE:
+
+        start_seed = st.number_input(
+            "Seed (Random)",
+            min_value=0,
+            max_value=99999,
+            value=42,
+            step=1,
+            key="hybrid_start_seed"
         )
 
-        if start_choice == RANDOM_NODE:
+        start = pick_random_node(len(df), start_seed)
 
-            start_seed = st.number_input(
-                "Seed (Random)",
-                min_value=0,
-                max_value=99999,
-                value=42,
-                step=1,
-                key="hybrid_start_seed"
-            )
+        start_note = f"dipilih acak (seed {int(start_seed)})"
 
-            start = pick_random_node(len(df), start_seed)
+        st.caption(f"Start node = **{labels[start]}**.")
 
-            start_note = f"dipilih acak (seed {int(start_seed)})"
+    else:
 
-            st.caption(f"Start node = **{labels[start]}**.")
+        start = labels.index(start_choice)
 
-        else:
+        start_note = None
 
-            start = labels.index(start_choice)
 
-            start_note = None
+    # ---------------- parameter ----------------
 
     involved = list(dict.fromkeys(inits + optimizers))
 
@@ -3900,37 +3989,77 @@ def render_hybrid(df, dist_matrix):
         if ALGORITHMS[m]["parameters"]
     ]
 
-    with col_params:
+    st.divider()
 
-        st.markdown("#### 3. Parameters")
+    st.subheader("Parameters")
 
-        if not methods_with_parameters:
+    if not methods_with_parameters:
 
-            st.caption(
-                "Algoritma yang dipilih tidak memiliki parameter."
-            )
+        st.caption(
+            "Algoritma yang dipilih tidak memiliki parameter."
+        )
 
-        else:
+    else:
 
-            active_method = st.radio(
-                "Pilih algoritma:",
-                methods_with_parameters,
-                horizontal=True,
-                key="hybrid_active_parameters"
-            )
+        active_method = st.radio(
+            "Pilih algoritma:",
+            methods_with_parameters,
+            horizontal=True,
+            key="hybrid_active_parameters"
+        )
 
-            render_parameter_panel(active_method, ns="hybrid")
+        render_parameter_panel(active_method, ns="hybrid")
 
 
     # ---------------- run ----------------
 
-    if st.button(
+    st.divider()
+
+    run = st.button(
         "▶ Run Hybrid",
         type="primary",
         use_container_width=True,
         disabled=not chosen_pairs,
         key="hybrid_run_button"
-    ):
+    )
+
+    return {
+        "chosen_pairs": chosen_pairs,
+        "start": start,
+        "start_note": start_note,
+        "involved": involved,
+        "run": run,
+    }
+
+
+def render_hybrid(df, dist_matrix, ctx):
+    """Halaman utama mode Hybrid (pengaturan ada di sidebar)."""
+
+    st.header("Hybrid")
+
+    st.caption(
+        "Gabungkan metode Constructive (membangun initialization) dengan "
+        "metode Optimization (memperbaikinya). Rute hasil tahap 1 menjadi "
+        "initial route tahap 2. Atur kombinasi, start node, dan parameter "
+        "di sidebar, lalu klik Run."
+    )
+
+    chosen_pairs = ctx["chosen_pairs"]
+    start = ctx["start"]
+    start_note = ctx["start_note"]
+    involved = ctx["involved"]
+
+    if not chosen_pairs:
+
+        st.info(
+            "Pilih minimal satu Initialization dan satu Optimization "
+            "pada sidebar."
+        )
+
+
+    # ---------------- run ----------------
+
+    if ctx["run"] and chosen_pairs:
 
         st.session_state.hybrid_run_id += 1
 
@@ -4009,7 +4138,7 @@ def render_hybrid(df, dist_matrix):
 
     st.divider()
 
-    st.subheader("Results")
+    st.header("Results")
 
     result_tabs = st.tabs([r["label"] for r in results])
 
@@ -4042,7 +4171,7 @@ def render_hybrid(df, dist_matrix):
 
         st.divider()
 
-        st.subheader("Comparison")
+        st.header("Comparison")
 
         st.caption(
             "Hybrid dibandingkan satu sama lain dan dengan hasil "
@@ -4114,13 +4243,51 @@ def render_hybrid(df, dist_matrix):
 # HEADER
 # ============================================================
 
-st.title("🧭 TSP Learning & Optimization")
+if LOGO_PATH.exists():
+
+    col_logo, col_title = st.columns([1, 11])
+
+    with col_logo:
+
+        st.image(str(LOGO_PATH), width=80)
+
+    with col_title:
+
+        st.title("TSP Learning & Optimization")
+
+else:
+
+    st.title("🧭 TSP Learning & Optimization")
 
 st.caption(
     "Media interaktif untuk membedah, menguji, dan membandingkan "
     "berbagai metode heuristik dalam menyelesaikan "
     "Travelling Salesman Problem."
 )
+
+
+# ============================================================
+# HALAMAN: TABU SEARCH (TUGAS) — paling atas, sebelum data
+# ============================================================
+#
+# Urutan opsi = urutan tab. Opsi pertama otomatis terbuka saat app dibuka;
+# ubah index=1 bila ingin halaman Eksperimen yang terbuka lebih dulu.
+
+page = st.radio(
+    "Halaman",
+    ["Tabu Search (Tugas)", "Eksperimen"],
+    index=0,
+    horizontal=True,
+    label_visibility="collapsed",
+    key="main_page"
+)
+
+if page == "Tabu Search (Tugas)":
+
+    # Halaman ini memakai data tugas sendiri, tidak butuh dataset di bawah
+    render_tabu_task()
+
+    st.stop()
 
 
 # ============================================================
@@ -4131,7 +4298,7 @@ st.header("📂 Input Data")
 
 input_type = st.radio(
     "Pilih sumber data:",
-    ["Generate", "Upload", "Manual"],
+    ["Dataset Large", "Generate", "Upload", "Manual"],
     horizontal=True
 )
 
@@ -4140,10 +4307,38 @@ new_data = None
 
 
 # ------------------------------------------------------------
+# DATASET LARGE (dataset/large.csv)
+# ------------------------------------------------------------
+
+if input_type == "Dataset Large":
+
+    if DATASET_LARGE.exists():
+
+        st.caption(
+            "Memakai file `dataset/large.csv` (kolom x, y tanpa header; "
+            "node diberi nomor otomatis mulai dari 0)."
+        )
+
+        if st.button(
+            "Gunakan Dataset Large",
+            type="primary"
+        ):
+
+            new_data = str(DATASET_LARGE)
+
+    else:
+
+        st.error(
+            "File `dataset/large.csv` tidak ditemukan. "
+            "Pastikan file ada di folder dataset/ pada repo."
+        )
+
+
+# ------------------------------------------------------------
 # GENERATE
 # ------------------------------------------------------------
 
-if input_type == "Generate":
+elif input_type == "Generate":
 
     col1, col2, col3 = st.columns(3)
 
@@ -4304,32 +4499,31 @@ if new_data is not None:
         )
 
 
+# Dataset bawaan: dimuat otomatis saat app pertama dibuka,
+# jadi cukup pilih algoritma di sidebar lalu klik Run.
+
+if st.session_state.df is None and DATASET_LARGE.exists():
+
+    try:
+
+        st.session_state.df = load_data(str(DATASET_LARGE))
+
+    except Exception as e:
+
+        st.warning(
+            f"Dataset bawaan (dataset/large.csv) gagal dimuat: {e}"
+        )
+
+
 # Stop kalau belum ada data
 
 if st.session_state.df is None:
 
     st.divider()
 
-    tab_independent, tab_hybrid, tab_tabu_task = st.tabs([
-        "Independent",
-        "Hybrid",
-        "Tabu Search (Tugas)"
-    ])
-
-    with tab_independent:
-
-        st.info(
-            "Masukkan dataset terlebih dahulu."
-        )
-
-    with tab_hybrid:
-
-        render_hybrid_placeholder()
-
-    # Tab ini memakai data tugas sendiri, tidak butuh dataset di atas
-    with tab_tabu_task:
-
-        render_tabu_task()
+    st.info(
+        "Masukkan dataset terlebih dahulu."
+    )
 
     st.stop()
 
@@ -4344,6 +4538,8 @@ df = st.session_state.df
 st.divider()
 
 st.header("📊 Data & Visualization")
+
+st.caption(f"Dataset aktif: {len(df)} node.")
 
 col1, col2 = st.columns(2)
 
@@ -4406,9 +4602,18 @@ coords = list(
 )
 
 
-dist_matrix = build_distance_matrix(
-    coords,
-    metric=distance_metric
+@st.cache_data(show_spinner="Menghitung distance matrix…")
+def cached_distance_matrix(coords_tuple, metric):
+
+    return build_distance_matrix(
+        list(coords_tuple),
+        metric=metric
+    )
+
+
+dist_matrix = cached_distance_matrix(
+    tuple(coords),
+    distance_metric
 )
 
 
@@ -4416,32 +4621,37 @@ with st.expander(
     "View Distance Matrix"
 ):
 
-    st.dataframe(
-        pd.DataFrame(
-            dist_matrix,
-            index=df["node"],
-            columns=df["node"]
-        ),
-        use_container_width=True
-    )
+    if len(df) > DISTANCE_MATRIX_DISPLAY_LIMIT:
+
+        st.caption(
+            f"Matriks {len(df)} × {len(df)} terlalu besar untuk "
+            f"ditampilkan (batas {DISTANCE_MATRIX_DISPLAY_LIMIT} node)."
+        )
+
+    else:
+
+        st.dataframe(
+            pd.DataFrame(
+                dist_matrix,
+                index=df["node"],
+                columns=df["node"]
+            ),
+            use_container_width=True
+        )
 
 
 # ============================================================
-# MAIN MODE
+# SIDEBAR (mode Independent / Hybrid)
 # ============================================================
+
+# Selalu didefinisikan agar tidak NameError saat Run
+run_independent = False
+selected_algorithms = []
+initial_solutions = {}
+algorithm_parameters = {}
+hybrid_ctx = None
 
 st.divider()
-
-tab_independent, tab_hybrid, tab_tabu_task = st.tabs([
-    "Independent",
-    "Hybrid",
-    "Tabu Search (Tugas)"
-])
-
-
-# ============================================================
-# INDEPENDENT SIDEBAR
-# ============================================================
 
 with st.sidebar:
 
@@ -4453,124 +4663,157 @@ with st.sidebar:
 
     with title_box:
 
-        st.header("Independent")
+        st.header("Pengaturan")
 
         st.divider()
 
     # --------------------------------------------------------
-    # ALGORITHM
+    # MODE
     # --------------------------------------------------------
 
-    st.subheader("Algorithm")
-
-    selected_algorithms = st.multiselect(
-        "Pilih satu atau beberapa algoritma:",
-        list(ALGORITHMS.keys()),
-        key="independent_algorithm_selection"
+    mode = st.radio(
+        "Mode",
+        ["Independent", "Hybrid"],
+        horizontal=True,
+        key="run_mode",
+        help=(
+            "Independent: tiap algoritma berjalan sendiri. "
+            "Hybrid: Constructive dilanjutkan Optimization."
+        )
     )
-
-    # Selalu didefinisikan agar tidak NameError saat Run
-    initial_solutions = {}
-    algorithm_parameters = {}
-
-
-    if selected_algorithms:
-
-        # ====================================================
-        # INITIAL SOLUTION  (pilih algoritma → ubah)
-        # ====================================================
-
-        st.divider()
-
-        st.subheader("Initial Solution")
-
-        active_initial = st.radio(
-            "Pilih algoritma:",
-            selected_algorithms,
-            horizontal=True,
-            key="independent_active_initial"
-        )
-
-        render_initial_panel(
-            active_initial,
-            selected_algorithms,
-            df
-        )
-
-
-        # ====================================================
-        # PARAMETERS  (pilih algoritma → ubah)
-        # ====================================================
-
-        st.divider()
-
-        st.subheader("Parameters")
-
-        methods_with_parameters = [
-            method
-            for method in selected_algorithms
-            if ALGORITHMS[method]["parameters"]
-        ]
-
-        if not methods_with_parameters:
-
-            st.caption(
-                "Algoritma yang dipilih tidak memiliki parameter."
-            )
-
-        else:
-
-            active_parameters = st.radio(
-                "Pilih algoritma:",
-                methods_with_parameters,
-                horizontal=True,
-                key="independent_active_parameters"
-            )
-
-            render_parameter_panel(active_parameters)
-
-
-        # Pengaturan SEMUA algoritma terpilih dibaca dari
-        # penyimpanan (bukan hanya yang sedang tampil).
-        initial_solutions = build_initial_solutions(
-            selected_algorithms,
-            df
-        )
-
-        algorithm_parameters = build_algorithm_parameters(
-            selected_algorithms
-        )
-
-
-    # --------------------------------------------------------
-    # RUN
-    # --------------------------------------------------------
 
     st.divider()
 
-    run_independent = st.button(
-        "▶ Run Independent",
-        type="primary",
-        use_container_width=True,
-        disabled=not selected_algorithms,
-        key="independent_run_button"
-    )
+
+    # ========================================================
+    # MODE INDEPENDENT
+    # ========================================================
+
+    if mode == "Independent":
+
+        # --------------------------------------------------------
+        # ALGORITHM
+        # --------------------------------------------------------
+
+        st.subheader("Algorithm")
+
+        selected_algorithms = st.multiselect(
+            "Pilih satu atau beberapa algoritma:",
+            list(ALGORITHMS.keys()),
+            key="independent_algorithm_selection"
+        )
+
+        # Selalu didefinisikan agar tidak NameError saat Run
+        initial_solutions = {}
+        algorithm_parameters = {}
+
+
+        if selected_algorithms:
+
+            # ====================================================
+            # INITIALIZATION  (pilih algoritma → ubah)
+            # ====================================================
+
+            st.divider()
+
+            st.subheader("Initialization")
+
+            active_initial = st.radio(
+                "Pilih algoritma:",
+                selected_algorithms,
+                horizontal=True,
+                key="independent_active_initial"
+            )
+
+            render_initial_panel(
+                active_initial,
+                selected_algorithms,
+                df
+            )
+
+
+            # ====================================================
+            # PARAMETERS  (pilih algoritma → ubah)
+            # ====================================================
+
+            st.divider()
+
+            st.subheader("Parameters")
+
+            methods_with_parameters = [
+                method
+                for method in selected_algorithms
+                if ALGORITHMS[method]["parameters"]
+            ]
+
+            if not methods_with_parameters:
+
+                st.caption(
+                    "Algoritma yang dipilih tidak memiliki parameter."
+                )
+
+            else:
+
+                active_parameters = st.radio(
+                    "Pilih algoritma:",
+                    methods_with_parameters,
+                    horizontal=True,
+                    key="independent_active_parameters"
+                )
+
+                render_parameter_panel(active_parameters)
+
+
+            # Pengaturan SEMUA algoritma terpilih dibaca dari
+            # penyimpanan (bukan hanya yang sedang tampil).
+            initial_solutions = build_initial_solutions(
+                selected_algorithms,
+                df
+            )
+
+            algorithm_parameters = build_algorithm_parameters(
+                selected_algorithms
+            )
+
+
+        # --------------------------------------------------------
+        # RUN
+        # --------------------------------------------------------
+
+        st.divider()
+
+        run_independent = st.button(
+            "▶ Run Independent",
+            type="primary",
+            use_container_width=True,
+            disabled=not selected_algorithms,
+            key="independent_run_button"
+        )
+
+
+    # ========================================================
+    # MODE HYBRID
+    # ========================================================
+
+    else:
+
+        hybrid_ctx = hybrid_sidebar(df)
 
 
 # ============================================================
 # INDEPENDENT CONTENT
 # ============================================================
 
-with tab_independent:
+if mode == "Independent":
 
-    st.subheader(
+    st.header(
         "Independent Algorithms"
     )
 
     st.caption(
         "Setiap algoritma berjalan secara independen "
         "menggunakan input awalnya masing-masing. "
-        "Atur algoritma, initial solution, dan parameter di sidebar, "
+        "Atur algoritma, initialization, dan parameter di sidebar, "
         "lalu klik Run."
     )
 
@@ -4685,7 +4928,7 @@ with tab_independent:
 
         st.divider()
 
-        st.subheader(
+        st.header(
             "Results"
         )
 
@@ -4712,7 +4955,7 @@ with tab_independent:
 
             st.divider()
 
-            st.subheader(
+            st.header(
                 "Comparison"
             )
 
@@ -4802,15 +5045,6 @@ with tab_independent:
 # HYBRID
 # ============================================================
 
-with tab_hybrid:
+else:
 
-    render_hybrid(df, dist_matrix)
-
-
-# ============================================================
-# TABU SEARCH (DATA TUGAS)
-# ============================================================
-
-with tab_tabu_task:
-
-    render_tabu_task()
+    render_hybrid(df, dist_matrix, hybrid_ctx)
