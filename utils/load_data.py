@@ -1,16 +1,3 @@
-# -*- coding: utf-8 -*-
-
-"""
-load_data.py
-
-Konfigurasi file (logo & dataset bawaan) dan pembacaan dataset.
-Tidak bergantung pada Streamlit.
-
-Catatan: tema Streamlit (.streamlit/config.toml) TIDAK bisa dipindah ke
-sini karena Streamlit hanya membaca file itu dari folder .streamlit/ di
-root proyek.
-"""
-
 from pathlib import Path
 
 import pandas as pd
