@@ -11,6 +11,11 @@ import pandas as pd
 import plotly.graph_objects as go
 
 
+# Warna grafik
+CHART_RED = "#D62828"       # Final Distance & Execution Time
+CHART_YELLOW = "#F4C430"    # Solution Improvement
+
+
 # ============================================================
 # 1. HITUNG IMPROVEMENT
 # ============================================================
@@ -211,7 +216,7 @@ def plot_distance_comparison(comparison_df):
             y=comparison_df["Final Distance"],
             text=comparison_df["Final Distance"],
             textposition="auto",
-            marker_color="#6B0B0C"
+            marker_color=CHART_RED
         )
     )
 
@@ -249,7 +254,7 @@ def plot_time_comparison(comparison_df):
             y=comparison_df["Execution Time (ms)"],
             text=comparison_df["Execution Time (ms)"],
             textposition="auto",
-            marker_color="#4F8FA3"
+            marker_color=CHART_RED
         )
     )
 
@@ -314,7 +319,7 @@ def plot_improvement_comparison(comparison_df):
                     for x in data["Improvement (%)"]
                 ],
                 textposition="auto",
-                marker_color="#B23A48"
+                marker_color=CHART_YELLOW
             )
         )
 
