@@ -32,14 +32,13 @@ from algorithms.tabu_search import (
     tabu_search
 )
 
-from utils.config import (
+from utils.load_data import (
     LOGO_PATH,
     DATASET_SMALL,
     DATASET_SMALL_NAME,
-    load_page_icon
+    load_page_icon,
+    load_data
 )
-
-from utils.load_data import load_data
 
 from utils.visualization import (
     plot_nodes,
@@ -63,7 +62,7 @@ from utils.comparison import (
 # ============================================================
 
 # Lokasi logo (utils/logo.png) dan dataset bawaan (dataset/small.csv)
-# diatur di utils/config.py
+# diatur di utils/load_data.py
 
 st.set_page_config(
     page_title="TSP Learning & Optimization",
