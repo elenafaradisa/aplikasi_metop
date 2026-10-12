@@ -420,6 +420,9 @@ ALGORITHMS = {
 if "df" not in st.session_state:
     st.session_state.df = None
 
+if "dataset_name" not in st.session_state:
+    st.session_state.dataset_name = None
+
 if "independent_results" not in st.session_state:
     st.session_state.independent_results = []
 
@@ -4267,246 +4270,19 @@ st.caption(
 
 
 # ============================================================
-# HALAMAN: TABU SEARCH (TUGAS) — paling atas, sebelum data
+# DATASET BAWAAN
 # ============================================================
 #
-# Urutan opsi = urutan tab. Opsi pertama otomatis terbuka saat app dibuka;
-# ubah index=1 bila ingin halaman Eksperimen yang terbuka lebih dulu.
-
-page = st.radio(
-    "Halaman",
-    ["Tabu Search (Tugas)", "Eksperimen"],
-    index=0,
-    horizontal=True,
-    label_visibility="collapsed",
-    key="main_page"
-)
-
-if page == "Tabu Search (Tugas)":
-
-    # Halaman ini memakai data tugas sendiri, tidak butuh dataset di bawah
-    render_tabu_task()
-
-    st.stop()
-
-
-# ============================================================
-# INPUT DATA
-# ============================================================
-
-st.header("📂 Input Data")
-
-input_type = st.radio(
-    "Pilih sumber data:",
-    ["Dataset Large", "Generate", "Upload", "Manual"],
-    horizontal=True
-)
-
-
-new_data = None
-
-
-# ------------------------------------------------------------
-# DATASET LARGE (dataset/large.csv)
-# ------------------------------------------------------------
-
-if input_type == "Dataset Large":
-
-    if DATASET_LARGE.exists():
-
-        st.caption(
-            "Memakai file `dataset/large.csv` (kolom x, y tanpa header; "
-            "node diberi nomor otomatis mulai dari 0)."
-        )
-
-        if st.button(
-            "Gunakan Dataset Large",
-            type="primary"
-        ):
-
-            new_data = str(DATASET_LARGE)
-
-    else:
-
-        st.error(
-            "File `dataset/large.csv` tidak ditemukan. "
-            "Pastikan file ada di folder dataset/ pada repo."
-        )
-
-
-# ------------------------------------------------------------
-# GENERATE
-# ------------------------------------------------------------
-
-elif input_type == "Generate":
-
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-
-        n_nodes = st.number_input(
-            "Jumlah node",
-            min_value=3,
-            max_value=500,
-            value=10
-        )
-
-    with col2:
-
-        data_seed = st.number_input(
-            "Seed",
-            min_value=0,
-            value=42
-        )
-
-    with col3:
-
-        coordinate_range = st.number_input(
-            "Coordinate Range",
-            min_value=1,
-            value=100
-        )
-
-
-    if st.button(
-        "Generate Dataset",
-        type="primary"
-    ):
-
-        rng = random.Random(
-            int(data_seed)
-        )
-
-        new_data = pd.DataFrame({
-
-            "node": [
-                chr(65 + i)
-                if i < 26
-                else f"N{i + 1}"
-                for i in range(
-                    int(n_nodes)
-                )
-            ],
-
-            "x": [
-                round(
-                    rng.uniform(
-                        0,
-                        coordinate_range
-                    ),
-                    2
-                )
-                for _ in range(
-                    int(n_nodes)
-                )
-            ],
-
-            "y": [
-                round(
-                    rng.uniform(
-                        0,
-                        coordinate_range
-                    ),
-                    2
-                )
-                for _ in range(
-                    int(n_nodes)
-                )
-            ]
-        })
-
-
-# ------------------------------------------------------------
-# UPLOAD
-# ------------------------------------------------------------
-
-elif input_type == "Upload":
-
-    uploaded_file = st.file_uploader(
-        "Upload CSV / Excel",
-        type=[
-            "csv",
-            "xlsx",
-            "xls"
-        ]
-    )
-
-    if uploaded_file is not None:
-
-        if st.button(
-            "Gunakan Dataset",
-            type="primary"
-        ):
-
-            new_data = uploaded_file
-
-
-# ------------------------------------------------------------
-# MANUAL
-# ------------------------------------------------------------
-
-else:
-
-    if "manual_data" not in st.session_state:
-
-        st.session_state.manual_data = pd.DataFrame({
-            "node": ["A", "B", "C", "D", "E"],
-            "x": [10, 50, 90, 70, 30],
-            "y": [20, 80, 40, 60, 90]
-        })
-
-
-    edited_data = st.data_editor(
-        st.session_state.manual_data,
-        num_rows="dynamic",
-        use_container_width=True
-    )
-
-
-    if st.button(
-        "Gunakan Dataset",
-        type="primary"
-    ):
-
-        new_data = edited_data
-
-
-# ============================================================
-# LOAD DATA
-# ============================================================
-
-if new_data is not None:
-
-    try:
-
-        st.session_state.df = load_data(
-            new_data
-        )
-
-        st.session_state.independent_results = []
-        st.session_state.hybrid_results = []
-
-        st.success(
-            "Dataset berhasil digunakan."
-        )
-
-        st.rerun()
-
-    except Exception as e:
-
-        st.error(
-            f"Gagal membaca dataset: {e}"
-        )
-
-
-# Dataset bawaan: dimuat otomatis saat app pertama dibuka,
-# jadi cukup pilih algoritma di sidebar lalu klik Run.
+# Dimuat SEKALI di awal (sebelum tab) supaya kedua tab dan sidebar
+# selalu memakai state yang sama. Cukup pilih algoritma lalu klik Run.
 
 if st.session_state.df is None and DATASET_LARGE.exists():
 
     try:
 
         st.session_state.df = load_data(str(DATASET_LARGE))
+
+        st.session_state.dataset_name = "dataset/large.csv"
 
     except Exception as e:
 
@@ -4515,536 +4291,787 @@ if st.session_state.df is None and DATASET_LARGE.exists():
         )
 
 
-# Stop kalau belum ada data
-
-if st.session_state.df is None:
-
-    st.divider()
-
-    st.info(
-        "Masukkan dataset terlebih dahulu."
-    )
-
-    st.stop()
-
-
-df = st.session_state.df
-
-
 # ============================================================
-# VIEW DATA
+# TAB: TABU SEARCH (TUGAS) | EKSPERIMEN
 # ============================================================
+#
+# Memakai st.tabs asli: isi KEDUA tab dijalankan di setiap rerun, sehingga
+# pengaturan sidebar, pilihan algoritma, dan hasil tidak hilang ketika
+# berpindah tab. Tab pertama = tab yang terbuka saat app dibuka.
 
-st.divider()
+tab_tugas, tab_eksperimen = st.tabs([
+    "Tabu Search (Tugas)",
+    "Eksperimen"
+])
 
-st.header("📊 Data & Visualization")
+# Tab ini memakai data tugas sendiri, tidak butuh dataset di bawah
+with tab_tugas:
 
-st.caption(f"Dataset aktif: {len(df)} node.")
-
-col1, col2 = st.columns(2)
+    render_tabu_task()
 
 
-with col1:
+with tab_eksperimen:
 
-    st.subheader("Dataset")
+    # ============================================================
+    # INPUT DATA
+    # ============================================================
 
-    st.dataframe(
-        df,
-        use_container_width=True,
-        hide_index=True
+    st.header("📂 Input Data")
+
+    input_type = st.radio(
+        "Pilih sumber data:",
+        ["Dataset Large", "Generate", "Upload", "Manual"],
+        horizontal=True
     )
 
 
-with col2:
-
-    st.subheader("Node Distribution")
-
-    # home=-1: tidak ada node yang ditandai merah, karena
-    # start node ditentukan per algoritma pada sidebar.
-    fig_nodes = plot_nodes(
-        df,
-        home=-1
-    )
-
-    st.plotly_chart(
-        fig_nodes,
-        use_container_width=True
-    )
+    new_data = None
 
 
-# ============================================================
-# DISTANCE METHOD
-# ============================================================
+    # ------------------------------------------------------------
+    # DATASET LARGE (dataset/large.csv)
+    # ------------------------------------------------------------
 
-st.divider()
+    if input_type == "Dataset Large":
 
-st.header("📐 Distance Matrix")
+        if DATASET_LARGE.exists():
 
-distance_method = st.radio(
-    "Distance Method",
-    ["Euclidean", "Manhattan"],
-    horizontal=True
-)
+            st.caption(
+                "Memakai file `dataset/large.csv` (kolom x, y tanpa header; "
+                "node diberi nomor otomatis mulai dari 0)."
+            )
 
+            if st.button(
+                "Gunakan Dataset Large",
+                type="primary"
+            ):
 
-distance_metric = (
-    "euclidean"
-    if distance_method == "Euclidean"
-    else "manhattan"
-)
+                new_data = str(DATASET_LARGE)
 
+        else:
 
-coords = list(
-    zip(
-        df["x"],
-        df["y"]
-    )
-)
+            st.error(
+                "File `dataset/large.csv` tidak ditemukan. "
+                "Pastikan file ada di folder dataset/ pada repo."
+            )
 
 
-@st.cache_data(show_spinner="Menghitung distance matrix…")
-def cached_distance_matrix(coords_tuple, metric):
+    # ------------------------------------------------------------
+    # GENERATE
+    # ------------------------------------------------------------
 
-    return build_distance_matrix(
-        list(coords_tuple),
-        metric=metric
-    )
+    elif input_type == "Generate":
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+
+            n_nodes = st.number_input(
+                "Jumlah node",
+                min_value=3,
+                max_value=500,
+                value=10
+            )
+
+        with col2:
+
+            data_seed = st.number_input(
+                "Seed",
+                min_value=0,
+                value=42
+            )
+
+        with col3:
+
+            coordinate_range = st.number_input(
+                "Coordinate Range",
+                min_value=1,
+                value=100
+            )
 
 
-dist_matrix = cached_distance_matrix(
-    tuple(coords),
-    distance_metric
-)
+        if st.button(
+            "Generate Dataset",
+            type="primary"
+        ):
+
+            rng = random.Random(
+                int(data_seed)
+            )
+
+            new_data = pd.DataFrame({
+
+                "node": [
+                    chr(65 + i)
+                    if i < 26
+                    else f"N{i + 1}"
+                    for i in range(
+                        int(n_nodes)
+                    )
+                ],
+
+                "x": [
+                    round(
+                        rng.uniform(
+                            0,
+                            coordinate_range
+                        ),
+                        2
+                    )
+                    for _ in range(
+                        int(n_nodes)
+                    )
+                ],
+
+                "y": [
+                    round(
+                        rng.uniform(
+                            0,
+                            coordinate_range
+                        ),
+                        2
+                    )
+                    for _ in range(
+                        int(n_nodes)
+                    )
+                ]
+            })
 
 
-with st.expander(
-    "View Distance Matrix"
-):
+    # ------------------------------------------------------------
+    # UPLOAD
+    # ------------------------------------------------------------
 
-    if len(df) > DISTANCE_MATRIX_DISPLAY_LIMIT:
+    elif input_type == "Upload":
 
-        st.caption(
-            f"Matriks {len(df)} × {len(df)} terlalu besar untuk "
-            f"ditampilkan (batas {DISTANCE_MATRIX_DISPLAY_LIMIT} node)."
+        uploaded_file = st.file_uploader(
+            "Upload CSV / Excel",
+            type=[
+                "csv",
+                "xlsx",
+                "xls"
+            ]
         )
+
+        if uploaded_file is not None:
+
+            if st.button(
+                "Gunakan Dataset",
+                type="primary"
+            ):
+
+                new_data = uploaded_file
+
+
+    # ------------------------------------------------------------
+    # MANUAL
+    # ------------------------------------------------------------
 
     else:
 
-        st.dataframe(
-            pd.DataFrame(
-                dist_matrix,
-                index=df["node"],
-                columns=df["node"]
-            ),
+        if "manual_data" not in st.session_state:
+
+            st.session_state.manual_data = pd.DataFrame({
+                "node": ["A", "B", "C", "D", "E"],
+                "x": [10, 50, 90, 70, 30],
+                "y": [20, 80, 40, 60, 90]
+            })
+
+
+        edited_data = st.data_editor(
+            st.session_state.manual_data,
+            num_rows="dynamic",
             use_container_width=True
         )
 
 
-# ============================================================
-# SIDEBAR (mode Independent / Hybrid)
-# ============================================================
+        if st.button(
+            "Gunakan Dataset",
+            type="primary"
+        ):
 
-# Selalu didefinisikan agar tidak NameError saat Run
-run_independent = False
-selected_algorithms = []
-initial_solutions = {}
-algorithm_parameters = {}
-hybrid_ctx = None
+            new_data = edited_data
 
-st.divider()
 
-with st.sidebar:
+    # ============================================================
+    # LOAD DATA
+    # ============================================================
 
-    # Judul + garis dalam satu wadah agar jaraknya rapat
-    try:
-        title_box = st.container(key="sidebar_title")
-    except TypeError:          # Streamlit versi lama (tanpa parameter key)
-        title_box = st.container()
+    if new_data is not None:
 
-    with title_box:
+        try:
 
-        st.header("Pengaturan")
+            st.session_state.df = load_data(
+                new_data
+            )
+
+            if isinstance(new_data, str):
+                st.session_state.dataset_name = "dataset/large.csv"
+            elif hasattr(new_data, "name"):
+                st.session_state.dataset_name = str(new_data.name)
+            else:
+                st.session_state.dataset_name = input_type
+
+            st.session_state.independent_results = []
+            st.session_state.hybrid_results = []
+
+            st.success(
+                "Dataset berhasil digunakan."
+            )
+
+            st.rerun()
+
+        except Exception as e:
+
+            st.error(
+                f"Gagal membaca dataset: {e}"
+            )
+
+
+    # Stop kalau belum ada data (sidebar tetap tampil agar tidak "hilang")
+
+    if st.session_state.df is None:
+
+        with st.sidebar:
+
+            st.header("Pengaturan")
+
+            st.info("Masukkan dataset terlebih dahulu.")
 
         st.divider()
 
-    # --------------------------------------------------------
-    # MODE
-    # --------------------------------------------------------
-
-    mode = st.radio(
-        "Mode",
-        ["Independent", "Hybrid"],
-        horizontal=True,
-        key="run_mode",
-        help=(
-            "Independent: tiap algoritma berjalan sendiri. "
-            "Hybrid: Constructive dilanjutkan Optimization."
+        st.info(
+            "Masukkan dataset terlebih dahulu."
         )
-    )
+
+        st.stop()
+
+
+    df = st.session_state.df
+
+
+    # ============================================================
+    # VIEW DATA
+    # ============================================================
 
     st.divider()
 
-
-    # ========================================================
-    # MODE INDEPENDENT
-    # ========================================================
-
-    if mode == "Independent":
-
-        # --------------------------------------------------------
-        # ALGORITHM
-        # --------------------------------------------------------
-
-        st.subheader("Algorithm")
-
-        selected_algorithms = st.multiselect(
-            "Pilih satu atau beberapa algoritma:",
-            list(ALGORITHMS.keys()),
-            key="independent_algorithm_selection"
-        )
-
-        # Selalu didefinisikan agar tidak NameError saat Run
-        initial_solutions = {}
-        algorithm_parameters = {}
-
-
-        if selected_algorithms:
-
-            # ====================================================
-            # INITIALIZATION  (pilih algoritma → ubah)
-            # ====================================================
-
-            st.divider()
-
-            st.subheader("Initialization")
-
-            active_initial = st.radio(
-                "Pilih algoritma:",
-                selected_algorithms,
-                horizontal=True,
-                key="independent_active_initial"
-            )
-
-            render_initial_panel(
-                active_initial,
-                selected_algorithms,
-                df
-            )
-
-
-            # ====================================================
-            # PARAMETERS  (pilih algoritma → ubah)
-            # ====================================================
-
-            st.divider()
-
-            st.subheader("Parameters")
-
-            methods_with_parameters = [
-                method
-                for method in selected_algorithms
-                if ALGORITHMS[method]["parameters"]
-            ]
-
-            if not methods_with_parameters:
-
-                st.caption(
-                    "Algoritma yang dipilih tidak memiliki parameter."
-                )
-
-            else:
-
-                active_parameters = st.radio(
-                    "Pilih algoritma:",
-                    methods_with_parameters,
-                    horizontal=True,
-                    key="independent_active_parameters"
-                )
-
-                render_parameter_panel(active_parameters)
-
-
-            # Pengaturan SEMUA algoritma terpilih dibaca dari
-            # penyimpanan (bukan hanya yang sedang tampil).
-            initial_solutions = build_initial_solutions(
-                selected_algorithms,
-                df
-            )
-
-            algorithm_parameters = build_algorithm_parameters(
-                selected_algorithms
-            )
-
-
-        # --------------------------------------------------------
-        # RUN
-        # --------------------------------------------------------
-
-        st.divider()
-
-        run_independent = st.button(
-            "▶ Run Independent",
-            type="primary",
-            use_container_width=True,
-            disabled=not selected_algorithms,
-            key="independent_run_button"
-        )
-
-
-    # ========================================================
-    # MODE HYBRID
-    # ========================================================
-
-    else:
-
-        hybrid_ctx = hybrid_sidebar(df)
-
-
-# ============================================================
-# INDEPENDENT CONTENT
-# ============================================================
-
-if mode == "Independent":
-
-    st.header(
-        "Independent Algorithms"
-    )
+    st.header("📊 Data & Visualization")
 
     st.caption(
-        "Setiap algoritma berjalan secara independen "
-        "menggunakan input awalnya masing-masing. "
-        "Atur algoritma, initialization, dan parameter di sidebar, "
-        "lalu klik Run."
+        f"Dataset aktif: {len(df)} node"
+        + (
+            f" ({st.session_state.dataset_name})"
+            if st.session_state.dataset_name
+            else ""
+        )
+        + "."
+    )
+
+    col1, col2 = st.columns(2)
+
+
+    with col1:
+
+        st.subheader("Dataset")
+
+        st.dataframe(
+            df,
+            use_container_width=True,
+            hide_index=True
+        )
+
+
+    with col2:
+
+        st.subheader("Node Distribution")
+
+        # home=-1: tidak ada node yang ditandai merah, karena
+        # start node ditentukan per algoritma pada sidebar.
+        fig_nodes = plot_nodes(
+            df,
+            home=-1
+        )
+
+        st.plotly_chart(
+            fig_nodes,
+            use_container_width=True
+        )
+
+
+    # ============================================================
+    # DISTANCE METHOD
+    # ============================================================
+
+    st.divider()
+
+    st.header("📐 Distance Matrix")
+
+    distance_method = st.radio(
+        "Distance Method",
+        ["Euclidean", "Manhattan"],
+        horizontal=True
     )
 
 
-    if not selected_algorithms:
+    distance_metric = (
+        "euclidean"
+        if distance_method == "Euclidean"
+        else "manhattan"
+    )
 
-        st.info(
-            "Pilih minimal satu algoritma pada sidebar."
+
+    coords = list(
+        zip(
+            df["x"],
+            df["y"]
+        )
+    )
+
+
+    @st.cache_data(show_spinner="Menghitung distance matrix…")
+    def cached_distance_matrix(coords_tuple, metric):
+
+        return build_distance_matrix(
+            list(coords_tuple),
+            metric=metric
         )
 
 
-    # ========================================================
-    # RUN
-    # ========================================================
-
-    if run_independent and selected_algorithms:
-
-        results = []
-
-        # Reset pilihan iterasi pada hasil sebelumnya
-        st.session_state.independent_run_id += 1
+    dist_matrix = cached_distance_matrix(
+        tuple(coords),
+        distance_metric
+    )
 
 
-        # ----------------------------------------------------
-        # RUN EACH ALGORITHM INDEPENDENTLY
-        # ----------------------------------------------------
+    with st.expander(
+        "View Distance Matrix"
+    ):
 
-        for method in selected_algorithms:
+        if len(df) > DISTANCE_MATRIX_DISPLAY_LIMIT:
 
-            try:
+            st.caption(
+                f"Matriks {len(df)} × {len(df)} terlalu besar untuk "
+                f"ditampilkan (batas {DISTANCE_MATRIX_DISPLAY_LIMIT} node)."
+            )
 
-                start_node, initial_route = resolve_initial(
-                    method,
-                    initial_solutions,
-                    selected_algorithms
-                )
+        else:
 
-                if (
-                    ALGORITHMS[method]["needs_start_node"]
-                    and start_node is None
-                ):
-
-                    raise ValueError(
-                        "Start Node belum dipilih."
-                    )
-
-                if (
-                    ALGORITHMS[method]["needs_initial_route"]
-                    and initial_route is None
-                ):
-
-                    raise ValueError(
-                        "Starting Route belum lengkap."
-                    )
-
-                parameters = dict(
-                    algorithm_parameters.get(
-                        method,
-                        {}
-                    )
-                )
-
-                # Agar detail per iterasi (mis. semua kandidat
-                # Tabu Search) tersedia untuk dataset kecil-menengah.
-                if (
-                    "verbose_history"
-                    in ALGORITHMS[method]["parameters"]
-                    and len(df) <= DETAIL_NODE_LIMIT
-                ):
-
-                    parameters["verbose_history"] = True
-
-                result = execute_independent_algorithm(
-                    method=method,
-                    df=df,
-                    dist_matrix=dist_matrix,
-                    start_node=start_node,
-                    initial_route=initial_route,
-                    parameters=parameters
-                )
-
-                result["start_note"] = start_note_of(
-                    method,
-                    initial_solutions
-                )
-
-                results.append(
-                    result
-                )
+            st.dataframe(
+                pd.DataFrame(
+                    dist_matrix,
+                    index=df["node"],
+                    columns=df["node"]
+                ),
+                use_container_width=True
+            )
 
 
-            except Exception as e:
+    # ============================================================
+    # SIDEBAR (mode Independent / Hybrid)
+    # ============================================================
 
-                st.error(
-                    f"{method} gagal dijalankan: {e}"
-                )
+    # Selalu didefinisikan agar tidak NameError saat Run
+    run_independent = False
+    selected_algorithms = []
+    initial_solutions = {}
+    algorithm_parameters = {}
+    hybrid_ctx = None
 
+    st.divider()
 
-        st.session_state.independent_results = (
-            results
+    with st.sidebar:
+
+        # Judul + garis dalam satu wadah agar jaraknya rapat
+        try:
+            title_box = st.container(key="sidebar_title")
+        except TypeError:          # Streamlit versi lama (tanpa parameter key)
+            title_box = st.container()
+
+        with title_box:
+
+            st.header("Pengaturan")
+
+            st.divider()
+
+        # --------------------------------------------------------
+        # MODE
+        # --------------------------------------------------------
+
+        mode = st.radio(
+            "Mode",
+            ["Independent", "Hybrid"],
+            horizontal=True,
+            key="run_mode",
+            help=(
+                "Independent: tiap algoritma berjalan sendiri. "
+                "Hybrid: Constructive dilanjutkan Optimization."
+            )
         )
-
-
-    # ========================================================
-    # RESULTS
-    # ========================================================
-
-    results = st.session_state.independent_results
-
-
-    if results:
 
         st.divider()
 
-        st.header(
-            "Results"
-        )
 
+        # ========================================================
+        # MODE INDEPENDENT
+        # ========================================================
 
-        for i, result in enumerate(results):
+        if mode == "Independent":
 
-            render_independent_result(
-                df,
-                dist_matrix,
-                result,
-                i
+            # --------------------------------------------------------
+            # ALGORITHM
+            # --------------------------------------------------------
+
+            st.subheader("Algorithm")
+
+            selected_algorithms = st.multiselect(
+                "Pilih satu atau beberapa algoritma:",
+                list(ALGORITHMS.keys()),
+                key="independent_algorithm_selection"
             )
 
-            if i < len(results) - 1:
+            # Selalu didefinisikan agar tidak NameError saat Run
+            initial_solutions = {}
+            algorithm_parameters = {}
+
+
+            if selected_algorithms:
+
+                # ====================================================
+                # INITIALIZATION  (pilih algoritma → ubah)
+                # ====================================================
 
                 st.divider()
 
+                st.subheader("Initialization")
 
-        # ====================================================
-        # COMPARISON
-        # ====================================================
+                active_initial = st.radio(
+                    "Pilih algoritma:",
+                    selected_algorithms,
+                    horizontal=True,
+                    key="independent_active_initial"
+                )
 
-        if len(results) >= 2:
+                render_initial_panel(
+                    active_initial,
+                    selected_algorithms,
+                    df
+                )
+
+
+                # ====================================================
+                # PARAMETERS  (pilih algoritma → ubah)
+                # ====================================================
+
+                st.divider()
+
+                st.subheader("Parameters")
+
+                methods_with_parameters = [
+                    method
+                    for method in selected_algorithms
+                    if ALGORITHMS[method]["parameters"]
+                ]
+
+                if not methods_with_parameters:
+
+                    st.caption(
+                        "Algoritma yang dipilih tidak memiliki parameter."
+                    )
+
+                else:
+
+                    active_parameters = st.radio(
+                        "Pilih algoritma:",
+                        methods_with_parameters,
+                        horizontal=True,
+                        key="independent_active_parameters"
+                    )
+
+                    render_parameter_panel(active_parameters)
+
+
+                # Pengaturan SEMUA algoritma terpilih dibaca dari
+                # penyimpanan (bukan hanya yang sedang tampil).
+                initial_solutions = build_initial_solutions(
+                    selected_algorithms,
+                    df
+                )
+
+                algorithm_parameters = build_algorithm_parameters(
+                    selected_algorithms
+                )
+
+
+            # --------------------------------------------------------
+            # RUN
+            # --------------------------------------------------------
+
+            st.divider()
+
+            run_independent = st.button(
+                "▶ Run Independent",
+                type="primary",
+                use_container_width=True,
+                disabled=not selected_algorithms,
+                key="independent_run_button"
+            )
+
+
+        # ========================================================
+        # MODE HYBRID
+        # ========================================================
+
+        else:
+
+            hybrid_ctx = hybrid_sidebar(df)
+
+
+    # ============================================================
+    # INDEPENDENT CONTENT
+    # ============================================================
+
+    if mode == "Independent":
+
+        st.header(
+            "Independent Algorithms"
+        )
+
+        st.caption(
+            "Setiap algoritma berjalan secara independen "
+            "menggunakan input awalnya masing-masing. "
+            "Atur algoritma, initialization, dan parameter di sidebar, "
+            "lalu klik Run."
+        )
+
+
+        if not selected_algorithms:
+
+            st.info(
+                "Pilih minimal satu algoritma pada sidebar."
+            )
+
+
+        # ========================================================
+        # RUN
+        # ========================================================
+
+        if run_independent and selected_algorithms:
+
+            results = []
+
+            # Reset pilihan iterasi pada hasil sebelumnya
+            st.session_state.independent_run_id += 1
+
+
+            # ----------------------------------------------------
+            # RUN EACH ALGORITHM INDEPENDENTLY
+            # ----------------------------------------------------
+
+            for method in selected_algorithms:
+
+                try:
+
+                    start_node, initial_route = resolve_initial(
+                        method,
+                        initial_solutions,
+                        selected_algorithms
+                    )
+
+                    if (
+                        ALGORITHMS[method]["needs_start_node"]
+                        and start_node is None
+                    ):
+
+                        raise ValueError(
+                            "Start Node belum dipilih."
+                        )
+
+                    if (
+                        ALGORITHMS[method]["needs_initial_route"]
+                        and initial_route is None
+                    ):
+
+                        raise ValueError(
+                            "Starting Route belum lengkap."
+                        )
+
+                    parameters = dict(
+                        algorithm_parameters.get(
+                            method,
+                            {}
+                        )
+                    )
+
+                    # Agar detail per iterasi (mis. semua kandidat
+                    # Tabu Search) tersedia untuk dataset kecil-menengah.
+                    if (
+                        "verbose_history"
+                        in ALGORITHMS[method]["parameters"]
+                        and len(df) <= DETAIL_NODE_LIMIT
+                    ):
+
+                        parameters["verbose_history"] = True
+
+                    result = execute_independent_algorithm(
+                        method=method,
+                        df=df,
+                        dist_matrix=dist_matrix,
+                        start_node=start_node,
+                        initial_route=initial_route,
+                        parameters=parameters
+                    )
+
+                    result["start_note"] = start_note_of(
+                        method,
+                        initial_solutions
+                    )
+
+                    results.append(
+                        result
+                    )
+
+
+                except Exception as e:
+
+                    st.error(
+                        f"{method} gagal dijalankan: {e}"
+                    )
+
+
+            st.session_state.independent_results = (
+                results
+            )
+
+
+        # ========================================================
+        # RESULTS
+        # ========================================================
+
+        results = st.session_state.independent_results
+
+
+        if results:
 
             st.divider()
 
             st.header(
-                "Comparison"
-            )
-
-            comparison_df = create_comparison_table(
-                results
-            )
-
-            comparison_df = sort_by_distance(
-                comparison_df
-            )
-
-            st.dataframe(
-                comparison_df,
-                use_container_width=True,
-                hide_index=True
+                "Results"
             )
 
 
-            col1, col2 = st.columns(2)
+            for i, result in enumerate(results):
+
+                render_independent_result(
+                    df,
+                    dist_matrix,
+                    result,
+                    i
+                )
+
+                if i < len(results) - 1:
+
+                    st.divider()
 
 
-            with col1:
+            # ====================================================
+            # COMPARISON
+            # ====================================================
 
-                best = get_best_distance(
+            if len(results) >= 2:
+
+                st.divider()
+
+                st.header(
+                    "Comparison"
+                )
+
+                comparison_df = create_comparison_table(
+                    results
+                )
+
+                comparison_df = sort_by_distance(
                     comparison_df
                 )
 
-                if best is not None:
+                st.dataframe(
+                    comparison_df,
+                    use_container_width=True,
+                    hide_index=True
+                )
 
-                    st.metric(
-                        "Best Distance",
-                        best["Method"],
-                        f"{best['Final Distance']:.2f}"
+
+                col1, col2 = st.columns(2)
+
+
+                with col1:
+
+                    best = get_best_distance(
+                        comparison_df
+                    )
+
+                    if best is not None:
+
+                        st.metric(
+                            "Best Distance",
+                            best["Method"],
+                            f"{best['Final Distance']:.2f}"
+                        )
+
+
+                with col2:
+
+                    fastest = get_fastest_method(
+                        comparison_df
+                    )
+
+                    if fastest is not None:
+
+                        st.metric(
+                            "Fastest",
+                            fastest["Method"],
+                            f"{fastest['Execution Time (ms)']:.3f} ms"
+                        )
+
+
+                col1, col2 = st.columns(2)
+
+
+                with col1:
+
+                    st.plotly_chart(
+                        plot_distance_comparison(
+                            comparison_df
+                        ),
+                        use_container_width=True,
+                        key="independent_cmp_distance"
                     )
 
 
-            with col2:
+                with col2:
 
-                fastest = get_fastest_method(
-                    comparison_df
-                )
-
-                if fastest is not None:
-
-                    st.metric(
-                        "Fastest",
-                        fastest["Method"],
-                        f"{fastest['Execution Time (ms)']:.3f} ms"
+                    st.plotly_chart(
+                        plot_time_comparison(
+                            comparison_df
+                        ),
+                        use_container_width=True,
+                        key="independent_cmp_time"
                     )
 
 
-            col1, col2 = st.columns(2)
-
-
-            with col1:
-
                 st.plotly_chart(
-                    plot_distance_comparison(
+                    plot_improvement_comparison(
                         comparison_df
                     ),
                     use_container_width=True,
-                    key="independent_cmp_distance"
+                    key="independent_cmp_improvement"
                 )
 
 
-            with col2:
+    # ============================================================
+    # HYBRID
+    # ============================================================
 
-                st.plotly_chart(
-                    plot_time_comparison(
-                        comparison_df
-                    ),
-                    use_container_width=True,
-                    key="independent_cmp_time"
-                )
+    else:
 
-
-            st.plotly_chart(
-                plot_improvement_comparison(
-                    comparison_df
-                ),
-                use_container_width=True,
-                key="independent_cmp_improvement"
-            )
-
-
-# ============================================================
-# HYBRID
-# ============================================================
-
-else:
-
-    render_hybrid(df, dist_matrix, hybrid_ctx)
+        render_hybrid(df, dist_matrix, hybrid_ctx)
