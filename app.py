@@ -159,18 +159,6 @@ st.markdown(
     [data-testid="stSidebar"] h2,
     [data-testid="stSidebar"] h3 {
         color: var(--yellow-pop) !important;
-        font-weight: 800 !important;
-        text-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
-    }
-    [data-testid="stSidebar"] h2 {
-        font-size: 1.75rem !important;
-        letter-spacing: 0.5px;
-    }
-    [data-testid="stSidebar"] h3 {
-        font-size: 1.3rem !important;
-        letter-spacing: 0.4px;
-        border-bottom: 2px solid rgba(255, 224, 102, 0.5);
-        padding-bottom: 0.25rem !important;
     }
 
     /* Penjelasan / label: lebih kecil dan lembut dibanding judul */
@@ -180,14 +168,9 @@ st.markdown(
     [data-testid="stSidebar"] label[data-baseweb="checkbox"] * {
         color: #FFFFFF !important;
     }
-    [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p {
-        font-size: 0.9rem;
-        font-weight: 500;
-    }
     [data-testid="stSidebar"] [data-testid="stCaptionContainer"],
     [data-testid="stSidebar"] [data-testid="stCaptionContainer"] * {
         color: var(--botticelli) !important;
-        font-size: 0.82rem;
     }
     [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
         color: #FFFFFF;
@@ -209,6 +192,22 @@ st.markdown(
     .st-key-sidebar_title { gap: 0.15rem !important; }
     .st-key-sidebar_title hr { margin: 0.2rem 0 0.5rem 0 !important; }
     .st-key-sidebar_title h2 { padding: 0 0 0.15rem 0 !important; }
+
+    /* Blok dropdown & input di sidebar: hanya warna (biru muda lembut) */
+    [data-testid="stSidebar"] [data-baseweb="select"] > div,
+    [data-testid="stSidebar"] [data-baseweb="input"],
+    [data-testid="stSidebar"] [data-baseweb="base-input"] {
+        background-color: #DCEBEF !important;
+        border-color: rgba(205, 227, 232, 0.6) !important;
+    }
+    [data-testid="stSidebar"] [data-baseweb="input"] input,
+    [data-testid="stSidebar"] [data-baseweb="select"] input {
+        background-color: transparent !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stNumberInputStepDown"],
+    [data-testid="stSidebar"] [data-testid="stNumberInputStepUp"] {
+        background-color: #C9DFE5 !important;
+    }
 
     /* Mode (Independent / Hybrid): masing-masing dalam kotak */
     .st-key-mode_box [role="radiogroup"] {
@@ -233,8 +232,6 @@ st.markdown(
     }
     .st-key-mode_box [role="radiogroup"] label p {
         text-align: center;
-        font-size: 0.95rem;
-        font-weight: 600;
     }
     .st-key-mode_box [role="radiogroup"] label:hover {
         background: rgba(255, 255, 255, 0.16);
@@ -247,7 +244,6 @@ st.markdown(
     }
     .st-key-mode_box [role="radiogroup"] label:has(input:checked) * {
         color: var(--maroon) !important;
-        font-weight: 800 !important;
     }
 
     /* Tombol Run di sidebar (kuning, menonjol di atas maroon) */
@@ -263,9 +259,6 @@ st.markdown(
     [data-testid="stSidebar"] button[kind="primary"] *,
     [data-testid="stSidebar"] [data-testid="stBaseButton-primary"] * {
         color: var(--maroon) !important;
-        font-weight: 800 !important;
-        font-size: 1.08rem !important;
-        letter-spacing: 0.5px;
     }
     [data-testid="stSidebar"] button[kind="primary"]:hover,
     [data-testid="stSidebar"] [data-testid="stBaseButton-primary"]:hover {
