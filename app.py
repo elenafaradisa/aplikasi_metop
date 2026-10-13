@@ -1457,12 +1457,12 @@ def _view(history, k, blocks):
 
 
 def _result_block(history, k, labels, note=""):
-    """Blok pertama SEMUA algoritma: hasil iterasi ini."""
+    """Blok pertama SEMUA algoritma: hasil iterasi."""
 
     item = history[k]
 
-    return _lines("Hasil Iterasi Ini", [
-        ("Rute Saat Ini", route_text(_route_of(item), labels)),
+    return _lines("Hasil Iterasi", [
+        ("Rute", route_text(_route_of(item), labels)),
         ("Total Jarak", f"**{_f(item.get('distance'))}**" + note),
     ])
 
@@ -2631,7 +2631,7 @@ def _generic_view(history, k, labels):
 def build_iteration_view(kind, history, k, dist, labels, strategy=None):
     """
     Detail iterasi ke-k dengan susunan yang sama untuk semua algoritma:
-        Hasil Iterasi Ini  ->  Proses & Perhitungan  ->  tabel (jika ada)
+        Hasil Iterasi  ->  Proses & Perhitungan  ->  tabel (jika ada)
 
     Return: {"title": str, "blocks": [ {"kind": "lines" | "table" | "text", ...} ]}
     """
