@@ -125,7 +125,7 @@ def sidebar_section(title, icon, expanded=True):
 
     try:
         return st.expander(title, expanded=expanded, icon=icon)
-    except TypeError:               # Streamlit versi lama (tanpa parameter icon)
+    except TypeError:               
         return st.expander(title, expanded=expanded)
 
 
@@ -735,6 +735,7 @@ st.markdown(
         margin: 0.4rem 0 0.2rem 0;
     }
     .tsp-hero img {
+        display: none !important;
         height: 3.8rem;
         width: auto;
         flex-shrink: 0;
