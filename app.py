@@ -67,14 +67,86 @@ st.set_page_config(
     layout="wide"
 )
 
-# Logo di pojok kiri atas sidebar (file: utils/logo.png, transparan).
-# Ukuran diperbesar lewat CSS di bawah.
-if LOGO_PATH.exists() and hasattr(st, "logo"):
+# Logo (utils/logo.png, transparan) dipakai di kartu brand sidebar dan
+# header halaman utama. Komponen sidebar dibuat di fungsi-fungsi berikut.
+
+@st.cache_resource(show_spinner=False)
+def _logo_data_uri(size=360):
+    """Logo transparan (PNG) sebagai data URI untuk HTML sidebar."""
+
+    import base64
+    import io
 
     try:
-        st.logo(str(LOGO_PATH), size="large")
-    except TypeError:               # Streamlit versi lama (tanpa parameter size)
-        st.logo(str(LOGO_PATH))
+
+        from PIL import Image
+
+        image = Image.open(LOGO_PATH).convert("RGBA")
+
+        image.thumbnail((size, size), Image.LANCZOS)
+
+        buffer = io.BytesIO()
+
+        image.save(buffer, format="PNG")
+
+        return (
+            "data:image/png;base64,"
+            + base64.b64encode(buffer.getvalue()).decode("ascii")
+        )
+
+    except Exception:
+
+        return None
+
+
+def render_sidebar_brand():
+    """Kartu brand di atas sidebar: logo transparan + nama aplikasi."""
+
+    uri = _logo_data_uri() if LOGO_PATH.exists() else None
+
+    logo_html = f'<img src="{uri}" alt="TSP"/>' if uri else ""
+
+    st.markdown(
+        f"""
+        <div class="tsp-brand">
+            {logo_html}
+            <div>
+                <div class="tsp-brand-title">TSP Optimizer</div>
+                <div class="tsp-brand-sub">Learning &amp; Optimization</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+def sidebar_section(title, icon, expanded=True):
+    """Section sidebar yang bisa dilipat, lengkap dengan ikon."""
+
+    try:
+        return st.expander(title, expanded=expanded, icon=icon)
+    except TypeError:               # Streamlit versi lama (tanpa parameter icon)
+        return st.expander(title, expanded=expanded)
+
+
+def sidebar_run_bar():
+    """Wadah tombol Run yang menempel di dasar sidebar."""
+
+    try:
+        return st.container(key="run_bar")
+    except TypeError:               # Streamlit versi lama (tanpa parameter key)
+        return st.container()
+
+
+def run_button(label, **kwargs):
+    """Tombol Run lebar penuh + ikon petir (fallback untuk Streamlit lama)."""
+
+    try:
+        return st.button(label, icon=":material/bolt:", width="stretch", **kwargs)
+    except TypeError:
+        kwargs["use_container_width"] = True
+        return st.button(label, **kwargs)
+
 
 # Tema "Botticelli Mist": dasar biru-abu lembut (turunan Botticelli #CDE3E8).
 # Teks Coffee Bean #2D120D; aksen Rosewood #6B0B0C.
@@ -82,7 +154,7 @@ if LOGO_PATH.exists() and hasattr(st, "logo"):
 st.markdown(
     """
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600;700&display=swap');
 
     :root {
         --rosewood: #6B0B0C;
@@ -126,184 +198,511 @@ st.markdown(
     hr { border-color: rgba(107, 11, 12, 0.18) !important; }
 
     /* ======================================================
-       SIDEBAR  (dasar maroon)
+       SIDEBAR  (gaya baru: maroon gradasi, kartu, ikon)
        ====================================================== */
     [data-testid="stSidebar"] {
-        background-color: var(--rosewood) !important;
-        border-right: 1px solid rgba(0, 0, 0, 0.25);
+        background: linear-gradient(180deg, #641712 0%, #511210 48%, #3F0C09 100%) !important;
+        border-right: 1px solid rgba(0, 0, 0, 0.30);
+        font-family: 'Inter', 'Source Sans Pro', system-ui, sans-serif;
+    }
+    [data-testid="stSidebar"] [data-testid="stSidebarContent"] {
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255, 255, 255, 0.28) transparent;
     }
     [data-testid="stSidebar"] hr {
         margin: 0.7rem 0 !important;
-        border-color: rgba(255, 251, 202, 0.35) !important;
+        border-color: rgba(255, 255, 255, 0.12) !important;
     }
 
-    /* Logo pojok kiri atas sidebar: diperbesar */
+    /* Header bawaan: hanya tombol tutup sidebar, melayang di kanan atas
+       kartu brand */
     [data-testid="stSidebarHeader"] {
+        position: absolute;
+        top: 1.15rem;
+        right: 0.8rem;
+        z-index: 10;
         height: auto !important;
-        min-height: 5rem;
-        padding-top: 1rem !important;
-        padding-bottom: 0.5rem !important;
+        min-height: 0 !important;
+        padding: 0 !important;
+        background: transparent !important;
     }
-    [data-testid="stSidebarHeader"] img,
-    img[data-testid="stLogo"],
-    [data-testid="stSidebarLogo"] {
-        height: 4.2rem !important;
-        max-width: 100% !important;
-        width: auto !important;
-        object-fit: contain;
+    [data-testid="stSidebarHeader"] button,
+    [data-testid="stSidebarCollapseButton"] button {
+        color: rgba(255, 255, 255, 0.75) !important;
     }
-
-    /* Judul sidebar ("Pengaturan") */
-    .st-key-sidebar_title { gap: 0.15rem !important; }
-    .st-key-sidebar_title hr { margin: 0.15rem 0 0.5rem 0 !important; }
-    [data-testid="stSidebar"] h2 {
-        color: var(--yellow) !important;
-        font-size: 1.9rem !important;
-        padding: 0 0 0.15rem 0 !important;
+    [data-testid="stSidebarHeader"] svg {
+        color: rgba(255, 255, 255, 0.75) !important;
+        fill: rgba(255, 255, 255, 0.75) !important;
+    }
+    [data-testid="stSidebarUserContent"] {
+        padding-top: 1.1rem !important;
     }
 
-    /* Control group (Algorithm, Initialization, Parameters): pop up */
-    [data-testid="stSidebar"] h3 {
-        color: var(--yellow) !important;
-        font-size: 1.4rem !important;
-        font-weight: 700 !important;
-        padding: 0.3rem 0 0.3rem 0 !important;
-        margin-bottom: 0.4rem !important;
-        border-bottom: 2px solid rgba(255, 251, 202, 0.45);
+    /* ---- Kartu brand (logo transparan + judul) ---- */
+    .tsp-brand {
+        display: flex;
+        align-items: center;
+        gap: 0.7rem;
+        padding: 0 1.9rem 1rem 0;
+        margin-bottom: 0.2rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    }
+    .tsp-brand img {
+        height: 2.25rem;
+        width: auto;
+        flex-shrink: 0;
+        background: transparent;
+        filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.30));
+    }
+    .tsp-brand .tsp-brand-title {
+        color: #FFFFFF;
+        font-weight: 700;
+        font-size: 1.05rem;
+        line-height: 1.2;
+        letter-spacing: 0.1px;
+        white-space: nowrap;
+    }
+    .tsp-brand .tsp-brand-sub {
+        color: rgba(255, 255, 255, 0.62);
+        font-size: 0.78rem;
+        line-height: 1.3;
+        white-space: nowrap;
     }
 
-    /* Penjelasan / label / caption: kecil dan lembut */
-    [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p,
+    /* ---- Section (expander) dengan ikon ---- */
+    [data-testid="stSidebar"] [data-testid="stExpander"] {
+        border: none !important;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.12) !important;
+        border-radius: 0 !important;
+        background: transparent !important;
+        box-shadow: none !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stExpander"] details {
+        border: none !important;
+        background: transparent !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stExpander"] summary {
+        padding: 1rem 0 0.8rem 0 !important;
+        background: transparent !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stExpander"] summary:hover {
+        background: transparent !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stExpander"] summary p,
+    [data-testid="stSidebar"] [data-testid="stExpander"] summary span {
+        color: #FFFFFF !important;
+        font-size: 1.02rem !important;
+        font-weight: 500 !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stExpander"] summary svg {
+        color: rgba(255, 255, 255, 0.85) !important;
+        fill: rgba(255, 255, 255, 0.85) !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stExpanderDetails"] {
+        padding: 0.1rem 0 1.1rem 0 !important;
+    }
+
+    /* ---- Label widget: kecil, huruf kapital, redup ---- */
+    [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p {
+        color: rgba(255, 255, 255, 0.62) !important;
+        font-size: 0.72rem !important;
+        font-weight: 600 !important;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+    }
     [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
-        color: var(--botticelli-soft);
-        font-size: 0.85rem;
-        font-weight: 400;
+        color: rgba(255, 255, 255, 0.82);
+        font-size: 0.88rem;
     }
     [data-testid="stSidebar"] [data-testid="stCaptionContainer"],
     [data-testid="stSidebar"] [data-testid="stCaptionContainer"] p {
-        color: var(--botticelli) !important;
-        font-size: 0.78rem !important;
-        opacity: 0.9;
+        color: rgba(255, 255, 255, 0.62) !important;
+        font-size: 0.8rem !important;
     }
     [data-testid="stSidebar"] [data-testid="stTooltipIcon"] svg {
-        color: var(--botticelli);
+        color: rgba(255, 255, 255, 0.6);
     }
 
-    /* Kotak info di sidebar tetap terbaca */
-    [data-testid="stSidebar"] [data-testid="stAlert"] p {
-        color: var(--coffee) !important;
+    /* ---- Kotak info / peringatan ---- */
+    [data-testid="stSidebar"] [data-testid="stAlert"] {
+        background: rgba(255, 255, 255, 0.06) !important;
+        border: 1px solid rgba(255, 255, 255, 0.12) !important;
+        border-radius: 12px !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stAlert"] p,
+    [data-testid="stSidebar"] [data-testid="stAlert"] svg {
+        color: rgba(255, 255, 255, 0.85) !important;
+        fill: rgba(255, 255, 255, 0.85) !important;
+        font-size: 0.85rem !important;
     }
 
-    /* Input di sidebar: latar terang agar teks terbaca */
+    /* ---- Input / select: kaca gelap berujung bulat ---- */
     [data-testid="stSidebar"] [data-baseweb="select"] > div,
     [data-testid="stSidebar"] [data-baseweb="input"],
     [data-testid="stSidebar"] [data-baseweb="base-input"] {
-        background-color: var(--mist) !important;
+        background-color: rgba(255, 255, 255, 0.08) !important;
+        border: 1px solid rgba(255, 255, 255, 0.14) !important;
+        border-radius: 12px !important;
+        transition: background-color 0.15s ease, border-color 0.15s ease;
+    }
+    [data-testid="stSidebar"] [data-baseweb="select"] > div:hover,
+    [data-testid="stSidebar"] [data-baseweb="input"]:hover {
+        background-color: rgba(255, 255, 255, 0.12) !important;
+        border-color: rgba(255, 255, 255, 0.28) !important;
+    }
+    [data-testid="stSidebar"] [data-baseweb="select"] > div:focus-within,
+    [data-testid="stSidebar"] [data-baseweb="input"]:focus-within {
+        border-color: var(--yellow) !important;
     }
     [data-testid="stSidebar"] input,
     [data-testid="stSidebar"] [data-baseweb="select"] div {
-        color: var(--coffee) !important;
+        color: #FFFFFF !important;
+    }
+    [data-testid="stSidebar"] input::placeholder {
+        color: rgba(255, 255, 255, 0.6) !important;
+    }
+    [data-testid="stSidebar"] [data-baseweb="select"] svg {
+        color: rgba(255, 255, 255, 0.85) !important;
+        fill: rgba(255, 255, 255, 0.85) !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stNumberInputStepUp"],
+    [data-testid="stSidebar"] [data-testid="stNumberInputStepDown"] {
+        background: transparent !important;
+        color: rgba(255, 255, 255, 0.85) !important;
     }
     [data-testid="stSidebar"] [data-baseweb="tag"] {
         background-color: var(--yellow) !important;
+        border-radius: 8px !important;
     }
     [data-testid="stSidebar"] [data-baseweb="tag"] span,
+    [data-testid="stSidebar"] [data-baseweb="tag"] div,
     [data-testid="stSidebar"] [data-baseweb="tag"] svg {
         color: var(--rosewood) !important;
         fill: var(--rosewood) !important;
     }
 
-    /* Radio & checkbox di sidebar (lingkaran terlihat di atas maroon) */
-    [data-testid="stSidebar"] label[data-baseweb="radio"] > div:first-child {
-        border-color: var(--yellow) !important;
-        background-color: transparent !important;
+    /* ---- Streamlit baru (react-aria): select, input, tag, radio ---- */
+    [data-testid="stSidebar"] .react-aria-ComboBox > [role="group"],
+    [data-testid="stSidebar"] [data-testid="stNumberInputContainer"] {
+        background-color: rgba(255, 255, 255, 0.08) !important;
+        border: 1px solid rgba(255, 255, 255, 0.14) !important;
+        border-radius: 12px !important;
+        transition: background-color 0.15s ease, border-color 0.15s ease;
     }
-    [data-testid="stSidebar"] label[data-baseweb="radio"]:has(input:checked) > div:first-child {
+    [data-testid="stSidebar"] .react-aria-ComboBox > [role="group"]:hover,
+    [data-testid="stSidebar"] [data-testid="stNumberInputContainer"]:hover {
+        background-color: rgba(255, 255, 255, 0.12) !important;
+        border-color: rgba(255, 255, 255, 0.28) !important;
+    }
+    [data-testid="stSidebar"] .react-aria-ComboBox > [role="group"]:focus-within,
+    [data-testid="stSidebar"] [data-testid="stNumberInputContainer"]:focus-within {
+        border-color: var(--yellow) !important;
+    }
+    [data-testid="stSidebar"] .react-aria-ComboBox input,
+    [data-testid="stSidebar"] [data-testid="stNumberInputField"] {
+        color: #FFFFFF !important;
+        -webkit-text-fill-color: #FFFFFF;
+        background: transparent !important;
+    }
+    [data-testid="stSidebar"] .react-aria-ComboBox input::placeholder,
+    [data-testid="stSidebar"] [data-testid="stNumberInputField"]::placeholder {
+        color: rgba(255, 255, 255, 0.6) !important;
+        -webkit-text-fill-color: rgba(255, 255, 255, 0.6);
+    }
+    [data-testid="stSidebar"] .react-aria-ComboBox button,
+    [data-testid="stSidebar"] .react-aria-ComboBox button svg,
+    [data-testid="stSidebar"] [data-testid="stNumberInputContainer"] button,
+    [data-testid="stSidebar"] [data-testid="stNumberInputContainer"] button svg {
+        color: rgba(255, 255, 255, 0.85) !important;
+        fill: rgba(255, 255, 255, 0.85) !important;
+        background: transparent !important;
+    }
+    [data-testid="stSidebar"] [data-tag] {
+        background-color: var(--yellow) !important;
+        border-radius: 8px !important;
+    }
+    [data-testid="stSidebar"] [data-tag] span,
+    [data-testid="stSidebar"] [data-tag] svg,
+    [data-testid="stSidebar"] [data-tag] button {
+        color: var(--rosewood) !important;
+        fill: var(--rosewood) !important;
+        opacity: 1 !important;
+    }
+    [data-testid="stSidebar"] .react-aria-ComboBox [data-tag] button,
+    [data-testid="stSidebar"] .react-aria-ComboBox [data-tag] button svg {
+        color: var(--rosewood) !important;
+        fill: var(--rosewood) !important;
+    }
+
+    /* Radio chip (horizontal) */
+    [data-testid="stSidebar"] [data-testid="stRadioGroup"] {
+        gap: 0.45rem;
+    }
+    [data-testid="stSidebar"] [class*="_active_"] [data-testid="stRadio"] [data-testid="stRadioGroup"] {
+        flex-wrap: wrap;
+    }
+    [data-testid="stSidebar"] [class*="_active_"] [data-testid="stRadio"] [data-testid="stRadioOption"] {
+        margin: 0 !important;
+        padding: 0.35rem 0.85rem;
+        border: 1px solid rgba(255, 255, 255, 0.20);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.05);
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+    [data-testid="stSidebar"] [class*="_active_"] [data-testid="stRadio"] [data-testid="stRadioOption"] > div > div:first-child {
+        display: none !important;
+    }
+    [data-testid="stSidebar"] [class*="_active_"] [data-testid="stRadio"] [data-testid="stRadioOption"] p {
+        color: rgba(255, 255, 255, 0.85) !important;
+        font-size: 0.85rem !important;
+        font-weight: 500 !important;
+    }
+    [data-testid="stSidebar"] [class*="_active_"] [data-testid="stRadio"] [data-testid="stRadioOption"]:hover {
+        background: rgba(255, 255, 255, 0.12);
+    }
+    [data-testid="stSidebar"] [class*="_active_"] [data-testid="stRadio"] [data-testid="stRadioOption"][data-selected="true"] {
+        background: var(--yellow);
+        border-color: var(--yellow);
+    }
+    [data-testid="stSidebar"] [class*="_active_"] [data-testid="stRadio"] [data-testid="stRadioOption"][data-selected="true"] p {
+        color: var(--rosewood) !important;
+        font-weight: 700 !important;
+    }
+
+    /* Mode: kartu vertikal dengan lingkaran radio */
+    .st-key-run_mode,
+    .st-key-run_mode [data-testid="stRadio"] {
+        width: 100% !important;
+    }
+    .st-key-run_mode [data-testid="stRadioGroup"] > div {
+        width: 100% !important;
+    }
+    .st-key-run_mode [data-testid="stRadioOption"] > div {
+        width: 100%;
+    }
+    .st-key-run_mode [data-testid="stRadioGroup"] {
+        align-items: stretch;
+        display: flex;
+        flex-direction: column;
+        gap: 0.55rem;
+        width: 100%;
+    }
+    .st-key-run_mode [data-testid="stRadioOption"] {
+        margin: 0 !important;
+        width: 100%;
+        padding: 0.8rem 1rem;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.04);
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+    .st-key-run_mode [data-testid="stRadioOption"] > div > div:first-child {
+        background-color: transparent !important;
+        border-color: rgba(255, 255, 255, 0.55) !important;
+    }
+    .st-key-run_mode [data-testid="stRadioOption"] p {
+        color: rgba(255, 255, 255, 0.9) !important;
+        font-size: 1rem !important;
+        font-weight: 500 !important;
+    }
+    .st-key-run_mode [data-testid="stRadioOption"]:hover {
+        background: rgba(255, 255, 255, 0.09);
+    }
+    .st-key-run_mode [data-testid="stRadioOption"][data-selected="true"] {
+        background: rgba(255, 255, 255, 0.13);
+        border-color: rgba(255, 251, 202, 0.85);
+    }
+    .st-key-run_mode [data-testid="stRadioOption"][data-selected="true"] > div > div:first-child {
+        border-color: var(--yellow) !important;
+        background-color: var(--yellow) !important;
+        box-shadow: inset 0 0 0 4px #5C1813;
+    }
+    .st-key-run_mode [data-testid="stRadioOption"][data-selected="true"] > div > div:first-child > div {
+        background: transparent !important;
+    }
+    .st-key-run_mode [data-testid="stRadioOption"][data-selected="true"] p {
+        color: #FFFFFF !important;
+        font-weight: 600 !important;
+    }
+
+    /* Panah section di sisi kanan (seperti desain Figma) */
+    [data-testid="stSidebar"] [data-testid="stExpander"] summary {
+        display: flex !important;
+        align-items: center;
+        justify-content: space-between;
+    }
+    [data-testid="stSidebar"] [data-testid="stExpander"] summary::after {
+        content: "";
+        flex-shrink: 0;
+        width: 0.5rem;
+        height: 0.5rem;
+        margin-right: 0.35rem;
+        border-right: 2px solid rgba(255, 255, 255, 0.8);
+        border-bottom: 2px solid rgba(255, 255, 255, 0.8);
+        transform: translateY(-2px) rotate(45deg);
+        transition: transform 0.15s ease;
+    }
+    [data-testid="stSidebar"] [data-testid="stExpander"] details:not([open]) summary::after {
+        transform: translateX(-2px) rotate(-45deg);
+    }
+    [data-testid="stSidebar"] [data-testid="stAlert"] * {
+        color: rgba(255, 255, 255, 0.85) !important;
+    }
+
+    /* ---- Radio umum di sidebar: chip bulat ---- */
+    [data-testid="stSidebar"] [data-testid="stRadio"] [role="radiogroup"] {
+        gap: 0.45rem;
+    }
+    [data-testid="stSidebar"] [class*="_active_"] [data-testid="stRadio"] label[data-baseweb="radio"] {
+        margin: 0 !important;
+        padding: 0.35rem 0.85rem;
+        border: 1px solid rgba(255, 255, 255, 0.20);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.05);
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+    [data-testid="stSidebar"] [class*="_active_"] [data-testid="stRadio"] label[data-baseweb="radio"] > div:first-child {
+        display: none !important;
+    }
+    [data-testid="stSidebar"] [class*="_active_"] [data-testid="stRadio"] label[data-baseweb="radio"] p {
+        color: rgba(255, 255, 255, 0.85) !important;
+        font-size: 0.85rem !important;
+        font-weight: 500 !important;
+        text-transform: none;
+        letter-spacing: 0;
+    }
+    [data-testid="stSidebar"] [class*="_active_"] [data-testid="stRadio"] label[data-baseweb="radio"]:hover {
+        background: rgba(255, 255, 255, 0.12);
+    }
+    [data-testid="stSidebar"] [class*="_active_"] [data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) {
+        background: var(--yellow);
+        border-color: var(--yellow);
+    }
+    [data-testid="stSidebar"] [class*="_active_"] [data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) p {
+        color: var(--rosewood) !important;
+        font-weight: 700 !important;
+    }
+
+    /* ---- MODE (Independent / Hybrid): kartu vertikal + lingkaran radio ---- */
+    .st-key-run_mode [role="radiogroup"] {
+        display: flex;
+        flex-direction: column;
+        gap: 0.55rem;
+        width: 100%;
+    }
+    .st-key-run_mode label[data-baseweb="radio"] {
+        margin: 0 !important;
+        padding: 0.8rem 1rem;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.04);
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+    .st-key-run_mode label[data-baseweb="radio"] > div:first-child {
+        background-color: transparent !important;
+        border-color: rgba(255, 255, 255, 0.55) !important;
+    }
+    .st-key-run_mode label[data-baseweb="radio"] p {
+        color: rgba(255, 255, 255, 0.9) !important;
+        font-size: 1rem !important;
+        font-weight: 500 !important;
+        text-transform: none;
+        letter-spacing: 0;
+    }
+    .st-key-run_mode label[data-baseweb="radio"]:hover {
+        background: rgba(255, 255, 255, 0.09);
+    }
+    .st-key-run_mode label[data-baseweb="radio"]:has(input:checked) {
+        background: rgba(255, 255, 255, 0.13);
+        border-color: rgba(255, 251, 202, 0.85);
+    }
+    .st-key-run_mode label[data-baseweb="radio"]:has(input:checked) > div:first-child {
         background-color: var(--yellow) !important;
         border-color: var(--yellow) !important;
+        box-shadow: inset 0 0 0 4px #5C1813;
     }
+    .st-key-run_mode label[data-baseweb="radio"]:has(input:checked) p {
+        color: #FFFFFF !important;
+        font-weight: 600 !important;
+    }
+
+    /* Checkbox */
     [data-testid="stSidebar"] [data-baseweb="checkbox"] > span:first-child {
-        border-color: var(--yellow) !important;
+        border-color: rgba(255, 255, 255, 0.55) !important;
     }
     [data-testid="stSidebar"] [data-baseweb="checkbox"]:has(input:checked) > span:first-child {
         background-color: var(--gold) !important;
         border-color: var(--gold) !important;
     }
 
-    /* ---- MODE (Independent / Hybrid): masing-masing dalam kotak ---- */
-    .st-key-run_mode [role="radiogroup"] {
-        display: flex;
-        gap: 0.6rem;
-        width: 100%;
+    /* ---- Bar RUN: selalu menempel di dasar sidebar ---- */
+    [data-testid="stSidebarUserContent"] {
+        padding-bottom: 0 !important;
     }
-    .st-key-run_mode label[data-baseweb="radio"] {
-        flex: 1;
-        justify-content: center;
-        margin: 0 !important;
-        padding: 0.75rem 0.5rem;
-        border: 2px solid var(--yellow);
-        border-radius: 12px;
-        background: rgba(255, 255, 255, 0.08);
-        cursor: pointer;
-        transition: all 0.15s ease;
+    [data-testid="stSidebarUserContent"] > div > [data-testid="stVerticalBlock"],
+    [data-testid="stSidebarUserContent"] > [data-testid="stVerticalBlock"] {
+        min-height: calc(100vh - 1.4rem);
     }
-    .st-key-run_mode label[data-baseweb="radio"] > div:first-child {
-        display: none !important;
+    [data-testid="stLayoutWrapper"]:has(> .st-key-run_bar),
+    .st-key-run_bar:not([data-testid="stLayoutWrapper"] > *) {
+        position: sticky;
+        bottom: 0;
+        z-index: 20;
+        margin-top: auto;
     }
-    .st-key-run_mode label[data-baseweb="radio"] p {
-        color: var(--yellow) !important;
-        font-size: 1rem !important;
-        font-weight: 600 !important;
-        text-align: center;
+    .st-key-run_bar {
+        padding: 1.4rem 0 1.2rem 0;
+        background: linear-gradient(180deg, rgba(63, 12, 9, 0) 0%, #3F0C09 35%);
     }
-    .st-key-run_mode label[data-baseweb="radio"]:hover {
-        background: rgba(255, 251, 202, 0.18);
-    }
-    .st-key-run_mode label[data-baseweb="radio"]:has(input:checked) {
-        background: var(--yellow);
-        box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
-    }
-    .st-key-run_mode label[data-baseweb="radio"]:has(input:checked) p {
-        color: var(--rosewood) !important;
-        font-weight: 800 !important;
-    }
-
-    /* ---- Tombol RUN di sidebar: lebih pop ---- */
     [data-testid="stSidebar"] button[kind="primary"],
     [data-testid="stSidebar"] [data-testid="stBaseButton-primary"] {
-        background: linear-gradient(180deg, #FFF9B8 0%, var(--gold) 100%) !important;
-        color: var(--rosewood) !important;
-        border: 2px solid var(--yellow) !important;
-        border-radius: 12px !important;
-        font-weight: 800 !important;
-        font-size: 1.05rem !important;
-        letter-spacing: 0.6px;
-        padding: 0.75rem 1rem !important;
-        box-shadow: 0 4px 0 #A8860A, 0 8px 16px rgba(0, 0, 0, 0.35) !important;
+        background: linear-gradient(180deg, #FFF6BF 0%, #F4C20D 100%) !important;
+        color: #4A0708 !important;
+        border: none !important;
+        border-radius: 14px !important;
+        font-weight: 700 !important;
+        font-size: 1.02rem !important;
+        letter-spacing: 0.3px;
+        padding: 0.8rem 1rem !important;
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35) !important;
         transition: transform 0.1s ease, filter 0.1s ease;
     }
     [data-testid="stSidebar"] button[kind="primary"] p,
-    [data-testid="stSidebar"] [data-testid="stBaseButton-primary"] p {
-        color: var(--rosewood) !important;
-        font-weight: 800 !important;
+    [data-testid="stSidebar"] button[kind="primary"] span,
+    [data-testid="stSidebar"] [data-testid="stBaseButton-primary"] p,
+    [data-testid="stSidebar"] [data-testid="stBaseButton-primary"] span {
+        color: #4A0708 !important;
+        font-weight: 700 !important;
     }
     [data-testid="stSidebar"] button[kind="primary"]:hover,
     [data-testid="stSidebar"] [data-testid="stBaseButton-primary"]:hover {
         transform: translateY(-2px);
-        filter: brightness(1.06);
-        background: linear-gradient(180deg, #FFFDD6 0%, #FFD43B 100%) !important;
-        color: var(--rosewood) !important;
-        border-color: #FFFFFF !important;
+        filter: brightness(1.05);
+        background: linear-gradient(180deg, #FFFBD6 0%, #FFD43B 100%) !important;
     }
     [data-testid="stSidebar"] button[kind="primary"]:active,
     [data-testid="stSidebar"] [data-testid="stBaseButton-primary"]:active {
-        transform: translateY(3px);
-        box-shadow: 0 1px 0 #A8860A, 0 3px 8px rgba(0, 0, 0, 0.35) !important;
+        transform: translateY(1px);
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35) !important;
     }
+    /* Nonaktif: tan redup seperti di desain Figma */
     [data-testid="stSidebar"] button[kind="primary"]:disabled,
     [data-testid="stSidebar"] [data-testid="stBaseButton-primary"]:disabled {
-        opacity: 0.45;
+        background: #8F6A5E !important;
+        opacity: 1;
         box-shadow: none !important;
+        transform: none;
+        filter: none;
+    }
+    [data-testid="stSidebar"] button[kind="primary"]:disabled p,
+    [data-testid="stSidebar"] button[kind="primary"]:disabled span,
+    [data-testid="stSidebar"] [data-testid="stBaseButton-primary"]:disabled p,
+    [data-testid="stSidebar"] [data-testid="stBaseButton-primary"]:disabled span {
+        color: #4A1410 !important;
     }
 
     /* ======================================================
@@ -328,37 +727,78 @@ st.markdown(
     /* ======================================================
        PILL NAVIGATION  (tab utama + pilihan sumber data)
        ====================================================== */
-    [data-baseweb="tab-list"] {
-        gap: 0.6rem;
-        border-bottom: none !important;
-        padding-bottom: 0.4rem;
+    /* ---- Header: logo sejajar judul ---- */
+    .tsp-hero {
+        display: flex;
+        align-items: center;
+        gap: 1.1rem;
+        margin: 0.4rem 0 0.2rem 0;
+    }
+    .tsp-hero img {
+        height: 3.8rem;
+        width: auto;
+        flex-shrink: 0;
+        filter: drop-shadow(0 1px 2px rgba(107, 11, 12, 0.35));
+    }
+    .tsp-hero h1 {
+        margin: 0 !important;
+        padding: 0 !important;
+        line-height: 1.15 !important;
+    }
+
+    /* ---- Tab utama: kontrol segmented berikon (seperti Figma) ---- */
+    [role="tablist"] {
+        display: inline-flex !important;
+        width: fit-content !important;
+        max-width: 100%;
+        gap: 0.35rem;
+        padding: 0.4rem;
+        margin-bottom: 0.8rem;
+        background: #FFFFFF;
+        border: 1px solid rgba(45, 18, 13, 0.10) !important;
+        border-radius: 18px;
+        box-shadow: 0 2px 10px rgba(45, 18, 13, 0.08);
+        overflow: visible !important;
+        height: auto !important;
     }
     [data-baseweb="tab-highlight"],
-    [data-baseweb="tab-border"] {
+    [data-baseweb="tab-border"],
+    .react-aria-SelectionIndicator {
         display: none !important;
     }
-    button[data-baseweb="tab"] {
-        background: #FFFFFF;
-        border: 1.5px solid var(--rosewood);
-        border-radius: 999px;
-        padding: 0.45rem 1.4rem;
+    [role="tab"] {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
         height: auto;
-        font-weight: 600;
-        color: var(--coffee);
-        box-shadow: 0 1px 3px rgba(45, 18, 13, 0.10);
-        transition: all 0.15s ease;
+        padding: 0.65rem 1.3rem;
+        background: transparent !important;
+        border: none !important;
+        border-radius: 13px;
+        box-shadow: none !important;
+        color: #6B4A3A;
+        cursor: pointer;
+        transition: background 0.15s ease, color 0.15s ease;
     }
-    button[data-baseweb="tab"]:hover {
-        background: var(--botticelli-soft);
+    [role="tab"] p,
+    [role="tab"] span,
+    [role="tab"] div {
+        color: #6B4A3A !important;
+        font-size: 1rem;
+        font-weight: 500;
     }
-    button[data-baseweb="tab"][aria-selected="true"] {
-        background: var(--rosewood);
-        color: #FFFFFF;
-        box-shadow: 0 3px 8px rgba(107, 11, 12, 0.35);
+    [role="tab"]:hover {
+        background: rgba(107, 11, 12, 0.07) !important;
     }
-    button[data-baseweb="tab"][aria-selected="true"] p,
-    button[data-baseweb="tab"][aria-selected="true"] div {
+    [role="tab"][aria-selected="true"] {
+        background: var(--rosewood) !important;
+        box-shadow: 0 3px 8px rgba(107, 11, 12, 0.30) !important;
+    }
+    [role="tab"][aria-selected="true"] p,
+    [role="tab"][aria-selected="true"] span,
+    [role="tab"][aria-selected="true"] div {
         color: #FFFFFF !important;
+        font-weight: 600;
     }
 
     .st-key-input_type [role="radiogroup"] {
@@ -4149,93 +4589,94 @@ def hybrid_sidebar(df):
 
     # ---------------- algoritma & kombinasi ----------------
 
-    st.subheader("Algorithm")
+    with sidebar_section("Algorithm", ":material/route:"):
 
-    inits = st.multiselect(
-        "Initialization (Constructive)",
-        constructive_methods,
-        key="hybrid_inits"
-    )
-
-    optimizers = st.multiselect(
-        "Optimization",
-        optimizer_methods,
-        key="hybrid_optimizers"
-    )
-
-    pairs = [(i, o) for i in inits for o in optimizers]
-
-    pair_labels = [f"{i} → {o}" for i, o in pairs]
-
-    chosen_pairs = []
-
-    if pairs:
-
-        chosen_labels = st.multiselect(
-            "Kombinasi yang dijalankan",
-            pair_labels,
-            default=pair_labels,
-            key="hybrid_combinations",
-            help="Hapus kombinasi yang tidak ingin dijalankan."
+        inits = st.multiselect(
+            "Initialization (Constructive)",
+            constructive_methods,
+            key="hybrid_inits",
+            placeholder="Pilih Initialization"
         )
 
-        chosen_pairs = [
-            pair
-            for pair, label in zip(pairs, pair_labels)
-            if label in chosen_labels
-        ]
+        optimizers = st.multiselect(
+            "Optimization",
+            optimizer_methods,
+            key="hybrid_optimizers",
+            placeholder="Pilih Optimization"
+        )
 
-        if len(chosen_pairs) > HYBRID_MAX_COMBINATIONS:
+        pairs = [(i, o) for i in inits for o in optimizers]
 
-            st.warning(
-                f"Maksimal {HYBRID_MAX_COMBINATIONS} kombinasi sekaligus. "
-                "Kurangi pilihan kombinasi."
+        pair_labels = [f"{i} → {o}" for i, o in pairs]
+
+        chosen_pairs = []
+
+        if pairs:
+
+            chosen_labels = st.multiselect(
+                "Kombinasi yang dijalankan",
+                pair_labels,
+                default=pair_labels,
+                key="hybrid_combinations",
+                help="Hapus kombinasi yang tidak ingin dijalankan."
             )
 
-            chosen_pairs = []
+            chosen_pairs = [
+                pair
+                for pair, label in zip(pairs, pair_labels)
+                if label in chosen_labels
+            ]
 
-    else:
+            if len(chosen_pairs) > HYBRID_MAX_COMBINATIONS:
 
-        st.caption(
-            "Pilih minimal satu Initialization dan satu Optimization."
-        )
+                st.warning(
+                    f"Maksimal {HYBRID_MAX_COMBINATIONS} kombinasi sekaligus. "
+                    "Kurangi pilihan kombinasi."
+                )
+
+                chosen_pairs = []
+
+        else:
+
+            st.info(
+                "Pilih minimal satu Initialization dan satu Optimization.",
+                icon=":material/info:"
+            )
 
 
     # ---------------- initialization (start node) ----------------
 
-    st.divider()
+    with sidebar_section("Initialization", ":material/adjust:"):
 
-    st.subheader("Initialization")
-
-    start_choice = st.selectbox(
-        "Start Node",
-        labels + [RANDOM_NODE],
-        key="hybrid_start_choice",
-        help="Node awal yang dipakai metode Constructive."
-    )
-
-    if start_choice == RANDOM_NODE:
-
-        start_seed = st.number_input(
-            "Seed (Random)",
-            min_value=0,
-            max_value=99999,
-            value=42,
-            step=1,
-            key="hybrid_start_seed"
+        start_choice = st.selectbox(
+            "Start Node",
+            labels + [RANDOM_NODE],
+            key="hybrid_start_choice",
+            help="Node awal yang dipakai metode Constructive."
         )
 
-        start = pick_random_node(len(df), start_seed)
+        if start_choice == RANDOM_NODE:
 
-        start_note = f"dipilih acak (seed {int(start_seed)})"
+            start_seed = st.number_input(
+                "Seed (Random)",
+                min_value=0,
+                max_value=99999,
+                value=42,
+                step=1,
+                key="hybrid_start_seed"
+            )
 
-        st.caption(f"Start node = **{labels[start]}**.")
+            start = pick_random_node(len(df), start_seed)
 
-    else:
+            start_note = f"dipilih acak (seed {int(start_seed)})"
 
-        start = labels.index(start_choice)
+            st.caption(f"Start node = **{labels[start]}**.")
 
-        start_note = None
+        else:
+
+            start = labels.index(start_choice)
+
+            start_note = None
 
 
     # ---------------- parameter ----------------
@@ -4247,39 +4688,36 @@ def hybrid_sidebar(df):
         if ALGORITHMS[m]["parameters"]
     ]
 
-    st.divider()
+    with sidebar_section("Parameters", ":material/layers:"):
 
-    st.subheader("Parameters")
+        if not methods_with_parameters:
 
-    if not methods_with_parameters:
+            st.caption(
+                "Algoritma yang dipilih tidak memiliki parameter."
+            )
 
-        st.caption(
-            "Algoritma yang dipilih tidak memiliki parameter."
-        )
+        else:
 
-    else:
+            active_method = st.radio(
+                "Pilih algoritma:",
+                methods_with_parameters,
+                horizontal=True,
+                key="hybrid_active_parameters"
+            )
 
-        active_method = st.radio(
-            "Pilih algoritma:",
-            methods_with_parameters,
-            horizontal=True,
-            key="hybrid_active_parameters"
-        )
-
-        render_parameter_panel(active_method, ns="hybrid")
+            render_parameter_panel(active_method, ns="hybrid")
 
 
     # ---------------- run ----------------
 
-    st.divider()
+    with sidebar_run_bar():
 
-    run = st.button(
-        "▶ Run Hybrid",
-        type="primary",
-        use_container_width=True,
-        disabled=not chosen_pairs,
-        key="hybrid_run_button"
-    )
+        run = run_button(
+            "Run Hybrid",
+            type="primary",
+            disabled=not chosen_pairs,
+            key="hybrid_run_button"
+        )
 
     return {
         "chosen_pairs": chosen_pairs,
@@ -4503,19 +4941,20 @@ def render_hybrid(df, dist_matrix, ctx):
 # HEADER
 # ============================================================
 
-# Logo halaman utama: file yang sama (utils/logo.png, transparan),
-# ukuran proporsional dipertahankan agar judul tidak bergeser.
-if LOGO_PATH.exists():
+# Logo halaman utama: logo transparan sejajar (rata tengah) dengan judul.
+_hero_uri = _logo_data_uri(520) if LOGO_PATH.exists() else None
 
-    col_logo, col_title = st.columns([1, 11])
+if _hero_uri:
 
-    with col_logo:
-
-        st.image(str(LOGO_PATH), width=80)
-
-    with col_title:
-
-        st.title("TSP Learning & Optimization")
+    st.markdown(
+        f"""
+        <div class="tsp-hero">
+            <img src="{_hero_uri}" alt="TSP"/>
+            <h1>TSP Learning &amp; Optimization</h1>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 else:
 
@@ -4559,8 +4998,8 @@ if st.session_state.df is None and DATASET_SMALL.exists():
 # algoritma, dan hasil tidak hilang ketika berpindah tab.
 
 tab_tugas, tab_eksperimen = st.tabs([
-    "Tabu Search (Tugas)",
-    "Eksperimen"
+    ":material/layers: Tabu Search (Tugas)",
+    ":material/science: Eksperimen"
 ])
 
 # Tab ini memakai data tugas sendiri, tidak butuh dataset di bawah
@@ -4794,11 +5233,11 @@ with tab_eksperimen:
 
         with st.sidebar:
 
-            st.divider()
+            render_sidebar_brand()
 
-            st.header("Pengaturan")
+            with sidebar_section("Pengaturan", ":material/tune:"):
 
-            st.info("Masukkan dataset terlebih dahulu.")
+                st.info("Masukkan dataset terlebih dahulu.")
 
         st.divider()
 
@@ -4944,35 +5383,23 @@ with tab_eksperimen:
 
     with st.sidebar:
 
-        # Divider di ATAS judul "Pengaturan", dalam satu wadah
-        # agar jaraknya rapat
-        try:
-            title_box = st.container(key="sidebar_title")
-        except TypeError:          # Streamlit versi lama (tanpa parameter key)
-            title_box = st.container()
-
-        with title_box:
-
-            st.divider()
-
-            st.header("Pengaturan")
+        render_sidebar_brand()
 
         # --------------------------------------------------------
-        # MODE  (Independent / Hybrid masing-masing dalam kotak)
+        # PENGATURAN  (Mode: Independent / Hybrid)
         # --------------------------------------------------------
 
-        mode = st.radio(
-            "Mode",
-            ["Independent", "Hybrid"],
-            horizontal=True,
-            key="run_mode",
-            help=(
-                "Independent: tiap algoritma berjalan sendiri. "
-                "Hybrid: Constructive dilanjutkan Optimization."
+        with sidebar_section("Pengaturan", ":material/tune:"):
+
+            mode = st.radio(
+                "Mode",
+                ["Independent", "Hybrid"],
+                key="run_mode",
+                help=(
+                    "Independent: tiap algoritma berjalan sendiri. "
+                    "Hybrid: Constructive dilanjutkan Optimization."
+                )
             )
-        )
-
-        st.divider()
 
 
         # ========================================================
@@ -4985,13 +5412,13 @@ with tab_eksperimen:
             # ALGORITHM
             # --------------------------------------------------------
 
-            st.subheader("Algorithm")
+            with sidebar_section("Algorithm", ":material/route:"):
 
-            selected_algorithms = st.multiselect(
-                "Pilih satu atau beberapa algoritma:",
-                list(ALGORITHMS.keys()),
-                key="independent_algorithm_selection"
-            )
+                selected_algorithms = st.multiselect(
+                    "Pilih satu atau beberapa algoritma:",
+                    list(ALGORITHMS.keys()),
+                    key="independent_algorithm_selection"
+                )
 
             # Selalu didefinisikan agar tidak NameError saat Run
             initial_solutions = {}
@@ -5004,54 +5431,50 @@ with tab_eksperimen:
                 # INITIALIZATION  (pilih algoritma → ubah)
                 # ====================================================
 
-                st.divider()
+                with sidebar_section("Initialization", ":material/adjust:"):
 
-                st.subheader("Initialization")
+                    active_initial = st.radio(
+                        "Pilih algoritma:",
+                        selected_algorithms,
+                        horizontal=True,
+                        key="independent_active_initial"
+                    )
 
-                active_initial = st.radio(
-                    "Pilih algoritma:",
-                    selected_algorithms,
-                    horizontal=True,
-                    key="independent_active_initial"
-                )
-
-                render_initial_panel(
-                    active_initial,
-                    selected_algorithms,
-                    df
-                )
+                    render_initial_panel(
+                        active_initial,
+                        selected_algorithms,
+                        df
+                    )
 
 
                 # ====================================================
                 # PARAMETERS  (pilih algoritma → ubah)
                 # ====================================================
 
-                st.divider()
+                with sidebar_section("Parameters", ":material/layers:"):
 
-                st.subheader("Parameters")
+                    methods_with_parameters = [
+                        method
+                        for method in selected_algorithms
+                        if ALGORITHMS[method]["parameters"]
+                    ]
 
-                methods_with_parameters = [
-                    method
-                    for method in selected_algorithms
-                    if ALGORITHMS[method]["parameters"]
-                ]
+                    if not methods_with_parameters:
 
-                if not methods_with_parameters:
+                        st.caption(
+                            "Algoritma yang dipilih tidak memiliki parameter."
+                        )
 
-                    st.caption(
-                        "Algoritma yang dipilih tidak memiliki parameter."
-                    )
+                    else:
 
-                else:
+                        active_parameters = st.radio(
+                            "Pilih algoritma:",
+                            methods_with_parameters,
+                            horizontal=True,
+                            key="independent_active_parameters"
+                        )
 
-                    active_parameters = st.radio(
-                        "Pilih algoritma:",
-                        methods_with_parameters,
-                        horizontal=True,
-                        key="independent_active_parameters"
-                    )
-
-                    render_parameter_panel(active_parameters)
+                        render_parameter_panel(active_parameters)
 
 
                 # Pengaturan SEMUA algoritma terpilih dibaca dari
@@ -5067,18 +5490,17 @@ with tab_eksperimen:
 
 
             # --------------------------------------------------------
-            # RUN
+            # RUN  (menempel di dasar sidebar)
             # --------------------------------------------------------
 
-            st.divider()
+            with sidebar_run_bar():
 
-            run_independent = st.button(
-                "▶ Run Independent",
-                type="primary",
-                use_container_width=True,
-                disabled=not selected_algorithms,
-                key="independent_run_button"
-            )
+                run_independent = run_button(
+                    "Run Independent",
+                    type="primary",
+                    disabled=not selected_algorithms,
+                    key="independent_run_button"
+                )
 
 
         # ========================================================
