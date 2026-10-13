@@ -62,7 +62,7 @@ from utils.comparison import (
 # ============================================================
 
 st.set_page_config(
-    page_title="TSP Learning & Optimization",
+    page_title=" Learning & Optimization",
     page_icon=load_page_icon(),
     layout="wide"
 )
@@ -735,7 +735,6 @@ st.markdown(
         margin: 0.4rem 0 0.2rem 0;
     }
     .tsp-hero img {
-        display: none !important;
         height: 3.8rem;
         width: auto;
         flex-shrink: 0;
@@ -4951,7 +4950,7 @@ if _hero_uri:
         f"""
         <div class="tsp-hero">
             <img src="{_hero_uri}" alt="TSP"/>
-            <h1>TSP Learning &amp; Optimization</h1>
+            <h1> Learning &amp; Optimization</h1>
         </div>
         """,
         unsafe_allow_html=True
@@ -4959,7 +4958,7 @@ if _hero_uri:
 
 else:
 
-    st.title("🧭 TSP Learning & Optimization")
+    st.title("Learning & Optimization")
 
 st.caption(
     "Media interaktif untuk membedah, menguji, dan membandingkan "
