@@ -1,12 +1,3 @@
-# -*- coding: utf-8 -*-
-
-"""
-comparison.py
-
-Fungsi untuk membandingkan hasil beberapa metode TSP.
-Tidak bergantung pada Streamlit.
-"""
-
 import pandas as pd
 import plotly.graph_objects as go
 
