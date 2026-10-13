@@ -865,8 +865,8 @@ st.markdown(
 
 # Warna grafik comparison (diterapkan di app.py agar utils/comparison.py
 # tidak perlu diubah)
-CHART_RED = "#C62828"       # Final Distance & Execution Time
-CHART_YELLOW = "#F4C20D"    # Solution Improvement
+CHART_RED = "#6B0B0C"       # Final Distance & Execution Time
+CHART_YELLOW = "#FFFBCA"    # Solution Improvement
 
 
 def recolor(fig, color):
