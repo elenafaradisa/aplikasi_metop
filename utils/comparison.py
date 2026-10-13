@@ -3,7 +3,7 @@ import plotly.graph_objects as go
 
 
 # Warna grafik
-CHART_RED = "#D62828"       # Final Distance & Execution Time
+CHART_RED = "#6B0B0C"       # Final Distance & Execution Time
 CHART_YELLOW = "#FFFBCA"    # Solution Improvement
 
 
