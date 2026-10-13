@@ -1,13 +1,3 @@
-# -*- coding: utf-8 -*-
-
-"""
-visualization.py
-
-Fungsi visualisasi untuk aplikasi TSP.
-File ini hanya membuat objek Plotly.
-Penampilan di Streamlit dilakukan oleh app.py.
-"""
-
 import plotly.graph_objects as go
 
 
