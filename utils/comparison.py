@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 
 # Warna grafik
 CHART_RED = "#D62828"       # Final Distance & Execution Time
-CHART_YELLOW = "#F4C430"    # Solution Improvement
+CHART_YELLOW = "#FFFBCA"    # Solution Improvement
 
 
 # ============================================================
