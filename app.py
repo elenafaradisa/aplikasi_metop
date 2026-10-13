@@ -3,7 +3,6 @@ import pandas as pd
 import math
 import random
 import time
-from pathlib import Path
 
 from algorithms.base import (
     build_distance_matrix,
@@ -32,7 +31,16 @@ from algorithms.tabu_search import (
     tabu_search
 )
 
-from utils.load_data import load_data
+# Logo + dataset bawaan sekarang dikelola di utils/load_data.py
+#   utils/logo.png      -> LOGO_PATH
+#   dataset/small.csv   -> DATASET_SMALL
+from utils.load_data import (
+    load_data,
+    load_page_icon,
+    LOGO_PATH,
+    DATASET_SMALL,
+    DATASET_SMALL_NAME
+)
 
 from utils.visualization import (
     plot_nodes,
@@ -55,17 +63,9 @@ from utils.comparison import (
 # PAGE CONFIG
 # ============================================================
 
-BASE_DIR = Path(__file__).parent
-
-# Logo: simpan gambar di assets/logo.png
-LOGO_PATH = BASE_DIR / "assets" / "logo.png"
-
-# Dataset bawaan (CSV tanpa header: kolom x, y)
-DATASET_LARGE = BASE_DIR / "dataset" / "large.csv"
-
 st.set_page_config(
     page_title="TSP Learning & Optimization",
-    page_icon=str(LOGO_PATH) if LOGO_PATH.exists() else "🧭",
+    page_icon=load_page_icon() if LOGO_PATH.exists() else "🧭",
     layout="wide"
 )
 
@@ -78,7 +78,7 @@ if LOGO_PATH.exists() and hasattr(st, "logo"):
 
 # Tema "Botticelli Mist": dasar biru-abu lembut (turunan Botticelli #CDE3E8).
 # Teks Coffee Bean #2D120D; aksen Rosewood #6B0B0C; kuning #FFFBCA hanya
-# sebagai aksen kecil (highlight judul, garis bawah metrik, baris terpilih).
+# sebagai aksen kecil. Sidebar berlatar Rosewood (teks kuning / biru / putih).
 st.markdown(
     """
     <style>
@@ -86,6 +86,7 @@ st.markdown(
 
     :root {
         --rosewood: #6B0B0C;
+        --rosewood-dark: #4E0809;
         --coffee: #2D120D;
         --mist: #F4F8F9;
         --mist-deep: #E2EDF0;
@@ -100,7 +101,7 @@ st.markdown(
     /* Cadangan jika .streamlit/config.toml belum dipasang */
     .stApp { background-color: var(--mist); color: var(--coffee); }
 
-    /* Judul klasik (serif) */
+    /* Judul klasik (serif), tanpa highlight */
     h1, h2, h3 {
         font-family: 'Playfair Display', Georgia, 'Times New Roman', serif !important;
         color: var(--rosewood) !important;
@@ -108,33 +109,188 @@ st.markdown(
     }
     h4, h5 { color: var(--coffee) !important; }
 
-    /* Highlight judul di halaman utama (kuning lembut + garis rosewood) */
-    [data-testid="stMain"] h2, section.main h2,
-    [data-testid="stMain"] h3, section.main h3 {
-        background: linear-gradient(90deg, var(--yellow) 0%, rgba(255, 251, 202, 0) 85%);
-        border-left: 5px solid var(--rosewood);
-        padding: 0.25rem 0.75rem !important;
-        border-radius: 4px;
-    }
-    /* Judul tabel / blok hasil */
-    [data-testid="stMain"] h4, section.main h4 {
-        border-bottom: 2px solid var(--yellow-deep);
-        display: inline-block;
-        padding-bottom: 0.1rem !important;
-    }
-
     /* Garis pemisah lembut */
     hr { border-color: rgba(107, 11, 12, 0.18) !important; }
 
-    /* Sidebar */
-    [data-testid="stSidebar"] {
-        background-color: var(--mist-deep) !important;
-        border-right: 1px solid rgba(107, 11, 12, 0.15);
+
+    /* ======================================================
+       SIDEBAR  (latar Rosewood)
+       ====================================================== */
+    [data-testid="stSidebar"],
+    [data-testid="stSidebar"] > div:first-child,
+    [data-testid="stSidebarContent"] {
+        background-color: var(--rosewood) !important;
     }
-    [data-testid="stSidebar"] hr { margin: 0.6rem 0 !important; }
+    [data-testid="stSidebar"] { border-right: none; }
+
+    /* Logo sidebar diperbesar */
+    [data-testid="stSidebarHeader"] {
+        height: auto !important;
+        min-height: 5.5rem;
+        padding: 1.1rem 1rem 0.4rem 1rem !important;
+        align-items: center;
+    }
+    [data-testid="stSidebarHeader"] a { display: block; }
+    [data-testid="stSidebarHeader"] img,
+    [data-testid="stSidebar"] [data-testid="stLogo"] {
+        height: 4.6rem !important;
+        width: auto !important;
+        max-width: 100% !important;
+        object-fit: contain;
+    }
+    /* (opsional) jika logo berwarna gelap dan kurang terlihat di latar maroon,
+       hapus tanda komentar baris di bawah agar logo menjadi putih:
+    [data-testid="stSidebarHeader"] img { filter: brightness(0) invert(1); } */
+
+    /* Tombol tutup sidebar */
+    [data-testid="stSidebarHeader"] button,
+    [data-testid="stSidebarHeader"] button svg { color: var(--yellow) !important; }
+
+    /* Judul "Pengaturan" */
+    [data-testid="stSidebar"] h2 {
+        color: var(--yellow) !important;
+        font-size: 1.9rem !important;
+        padding: 0 0 0.15rem 0 !important;
+    }
+
+    /* Kelompok kontrol (Algorithm / Initialization / Parameters) -> menonjol */
+    [data-testid="stSidebar"] h3 {
+        color: var(--yellow) !important;
+        font-size: 1.3rem !important;
+        font-weight: 700 !important;
+        letter-spacing: 0.4px;
+        margin-top: 0.3rem;
+        padding: 0.35rem 0.75rem !important;
+        border-left: 5px solid var(--yellow);
+        border-radius: 4px;
+        background: linear-gradient(
+            90deg, rgba(255, 251, 202, 0.20) 0%, rgba(255, 251, 202, 0) 90%
+        );
+    }
+
+    /* Penjelasan / label / caption -> lebih kecil & redup (biru lembut) */
+    [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p,
+    [data-testid="stSidebar"] label p {
+        color: var(--botticelli) !important;
+        font-size: 0.86rem !important;
+        font-weight: 500;
+    }
+    [data-testid="stSidebar"] [data-testid="stCaptionContainer"],
+    [data-testid="stSidebar"] [data-testid="stCaptionContainer"] * {
+        color: var(--botticelli) !important;
+        font-size: 0.78rem !important;
+        opacity: 0.9;
+    }
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p { color: #FFFFFF; }
+    [data-testid="stSidebar"] [data-testid="stTooltipIcon"],
+    [data-testid="stSidebar"] [data-testid="stTooltipIcon"] svg {
+        color: var(--botticelli) !important;
+        fill: var(--botticelli) !important;
+    }
+
+    /* Kotak info di dalam sidebar tetap terbaca (latar terang, teks gelap) */
+    [data-testid="stSidebar"] [data-testid="stAlert"] [data-testid="stMarkdownContainer"] p {
+        color: var(--coffee) !important;
+        font-size: 0.9rem !important;
+    }
+
+    /* Pembatas */
+    [data-testid="stSidebar"] hr {
+        margin: 0.6rem 0 !important;
+        border-color: rgba(255, 251, 202, 0.30) !important;
+    }
     .st-key-sidebar_title { gap: 0.15rem !important; }
     .st-key-sidebar_title hr { margin: 0.15rem 0 0.35rem 0 !important; }
     .st-key-sidebar_title h2 { padding: 0 0 0.15rem 0 !important; }
+
+    /* Radio di sidebar -> tombol kotak (Independent / Hybrid / pilih algoritma) */
+    [data-testid="stSidebar"] div[role="radiogroup"] {
+        gap: 0.45rem;
+        flex-wrap: wrap;
+    }
+    [data-testid="stSidebar"] div[role="radiogroup"] > label {
+        background: rgba(255, 255, 255, 0.08);
+        border: 1.5px solid rgba(255, 251, 202, 0.55);
+        border-radius: 10px;
+        padding: 0.4rem 0.8rem;
+        margin: 0 !important;
+        cursor: pointer;
+        transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+    }
+    [data-testid="stSidebar"] div[role="radiogroup"] > label > div:first-child {
+        display: none !important;
+    }
+    [data-testid="stSidebar"] div[role="radiogroup"] > label:hover {
+        background: rgba(255, 251, 202, 0.20);
+        border-color: var(--yellow);
+    }
+    [data-testid="stSidebar"] div[role="radiogroup"] > label p {
+        color: #FFFFFF !important;
+        font-size: 0.88rem !important;
+        font-weight: 600;
+    }
+    [data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) {
+        background: var(--yellow);
+        border-color: var(--yellow);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    }
+    [data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) p {
+        color: var(--rosewood) !important;
+    }
+
+    /* Mode (Independent / Hybrid): kotak besar, lebar sama */
+    .st-key-run_mode div[role="radiogroup"] { flex-wrap: nowrap !important; }
+    .st-key-run_mode div[role="radiogroup"] > label {
+        flex: 1;
+        justify-content: center;
+        padding: 0.7rem 0.5rem;
+    }
+    .st-key-run_mode div[role="radiogroup"] > label p {
+        font-size: 1rem !important;
+        font-weight: 700;
+    }
+
+    /* Checkbox di sidebar */
+    [data-testid="stSidebar"] label[data-baseweb="checkbox"] > span:first-child {
+        border-color: var(--yellow) !important;
+    }
+
+    /* Tombol Run di sidebar -> menonjol */
+    [data-testid="stSidebar"] [data-testid="stBaseButton-primary"] {
+        background: linear-gradient(180deg, #FFF59A 0%, #FFE35C 100%) !important;
+        color: var(--rosewood) !important;
+        border: 2px solid #FFFFFF !important;
+        border-radius: 12px !important;
+        min-height: 3.2rem;
+        padding: 0.7rem 1rem !important;
+        box-shadow: 0 4px 0 rgba(0, 0, 0, 0.35), 0 10px 20px rgba(0, 0, 0, 0.30);
+        transition: transform 0.12s, box-shadow 0.12s, background 0.12s;
+    }
+    [data-testid="stSidebar"] [data-testid="stBaseButton-primary"] p {
+        color: var(--rosewood) !important;
+        font-size: 1.05rem !important;
+        font-weight: 800 !important;
+        letter-spacing: 0.7px;
+        text-transform: uppercase;
+    }
+    [data-testid="stSidebar"] [data-testid="stBaseButton-primary"]:hover:not(:disabled) {
+        background: #FFFFFF !important;
+        transform: translateY(-2px);
+        box-shadow: 0 6px 0 rgba(0, 0, 0, 0.35), 0 14px 26px rgba(0, 0, 0, 0.35);
+    }
+    [data-testid="stSidebar"] [data-testid="stBaseButton-primary"]:active:not(:disabled) {
+        transform: translateY(3px);
+        box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35), 0 4px 10px rgba(0, 0, 0, 0.30);
+    }
+    [data-testid="stSidebar"] [data-testid="stBaseButton-primary"]:disabled {
+        opacity: 0.5;
+        box-shadow: none;
+    }
+
+
+    /* ======================================================
+       HALAMAN UTAMA
+       ====================================================== */
 
     /* Tombol utama */
     button[kind="primary"], [data-testid="stBaseButton-primary"] {
@@ -173,10 +329,65 @@ st.markdown(
         color: var(--coffee);
     }
 
-    /* Tab */
-    button[data-baseweb="tab"] { font-weight: 600; color: var(--coffee); }
-    button[data-baseweb="tab"][aria-selected="true"] { color: var(--rosewood); }
-    [data-baseweb="tab-highlight"] { background-color: var(--rosewood) !important; }
+    /* Tab -> Pill Navigation (kapsul putih berbingkai) */
+    [data-baseweb="tab-list"] { gap: 0.6rem; background: transparent !important; }
+    [data-baseweb="tab-border"],
+    [data-baseweb="tab-highlight"] { display: none !important; }
+    button[data-baseweb="tab"] {
+        background: #FFFFFF;
+        border: 1.5px solid rgba(107, 11, 12, 0.35);
+        border-radius: 999px;
+        height: auto;
+        padding: 0.45rem 1.4rem;
+        box-shadow: 0 1px 3px rgba(45, 18, 13, 0.10);
+        transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+    }
+    button[data-baseweb="tab"] p { color: var(--coffee); font-weight: 600; }
+    button[data-baseweb="tab"]:hover {
+        border-color: var(--rosewood);
+        background: var(--botticelli-soft);
+    }
+    button[data-baseweb="tab"][aria-selected="true"] {
+        background: var(--rosewood);
+        border-color: var(--rosewood);
+        box-shadow: 0 3px 8px rgba(107, 11, 12, 0.30);
+    }
+    button[data-baseweb="tab"][aria-selected="true"] p { color: #FFFFFF; }
+
+    /* Pilihan sumber data (Generate / Upload / Manual) -> pill */
+    .st-key-input_type_radio div[role="radiogroup"] {
+        gap: 0.6rem;
+        flex-wrap: wrap;
+    }
+    .st-key-input_type_radio div[role="radiogroup"] > label {
+        background: #FFFFFF;
+        border: 1.5px solid rgba(107, 11, 12, 0.35);
+        border-radius: 999px;
+        padding: 0.4rem 1.3rem;
+        margin: 0 !important;
+        cursor: pointer;
+        box-shadow: 0 1px 3px rgba(45, 18, 13, 0.10);
+        transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+    }
+    .st-key-input_type_radio div[role="radiogroup"] > label > div:first-child {
+        display: none !important;
+    }
+    .st-key-input_type_radio div[role="radiogroup"] > label p {
+        color: var(--coffee) !important;
+        font-weight: 600;
+    }
+    .st-key-input_type_radio div[role="radiogroup"] > label:hover {
+        border-color: var(--rosewood);
+        background: var(--botticelli-soft);
+    }
+    .st-key-input_type_radio div[role="radiogroup"] > label:has(input:checked) {
+        background: var(--rosewood);
+        border-color: var(--rosewood);
+        box-shadow: 0 3px 8px rgba(107, 11, 12, 0.30);
+    }
+    .st-key-input_type_radio div[role="radiogroup"] > label:has(input:checked) p {
+        color: #FFFFFF !important;
+    }
 
     /* Expander */
     [data-testid="stExpander"] {
@@ -187,6 +398,54 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
+
+# ============================================================
+# WARNA GRAFIK PERBANDINGAN
+# ============================================================
+
+COLOR_RED = "#B3202A"
+COLOR_YELLOW = "#F2D544"
+COLOR_OUTLINE = "#6B0B0C"
+
+
+def recolor(fig, color, outline=None):
+    """Samakan warna grafik hasil utils.comparison (bar / garis)."""
+
+    try:
+
+        fig.update_traces(marker_color=color, selector=dict(type="bar"))
+
+        if outline:
+
+            fig.update_traces(
+                marker_line_color=outline,
+                marker_line_width=1.2,
+                selector=dict(type="bar")
+            )
+
+        fig.update_traces(
+            marker_color=color,
+            line_color=color,
+            selector=dict(type="scatter")
+        )
+
+        fig.update_layout(showlegend=False)
+
+    except Exception:
+
+        pass
+
+    return fig
+
+
+def spacer(rem=1.0):
+    """Jarak vertikal kosong."""
+
+    st.markdown(
+        f"<div style='height:{rem}rem'></div>",
+        unsafe_allow_html=True
+    )
 
 
 # ============================================================
@@ -2336,7 +2595,7 @@ def render_independent_result(
     index,
     key_prefix="independent",
     run_id=None,
-    heading_level=2
+    heading_level=3
 ):
     """
     Urutan tampilan:
@@ -2359,11 +2618,16 @@ def render_independent_result(
     )
 
     # -------------------- 1. judul + penjelasan --------------------
+    # Nama algoritma lebih kecil dari judul "Results" dan diberi jarak.
+
+    spacer(1.0)
 
     if heading_level <= 2:
         st.header(method)
     else:
         st.subheader(method)
+
+    spacer(0.5)
 
     st.info(
         ALGORITHM_EXPLANATIONS.get(
@@ -2940,7 +3204,8 @@ def render_initial_panel(method, selected_algorithms, df):
 
     config = ALGORITHMS[method]
 
-    labels = df["node"].tolist()
+    # Label node selalu berupa teks (node dari load_data berupa angka 0,1,2,...)
+    labels = df["node"].astype(str).tolist()
 
     start_options = labels + [RANDOM_NODE]
 
@@ -3168,7 +3433,7 @@ def render_parameter_panel(method, ns="independent"):
 
 def build_initial_solutions(selected_algorithms, df):
 
-    labels = df["node"].tolist()
+    labels = df["node"].astype(str).tolist()
 
     n = len(df)
 
@@ -3879,7 +4144,7 @@ def render_hybrid_result(df, dist_matrix, combo, index, run_id):
 def hybrid_sidebar(df):
     """Pengaturan Hybrid di sidebar. Return dict konteks untuk render_hybrid."""
 
-    labels = df["node"].tolist()
+    labels = df["node"].astype(str).tolist()
 
     constructive_methods = [
         m for m, c in ALGORITHMS.items()
@@ -4143,6 +4408,8 @@ def render_hybrid(df, dist_matrix, ctx):
 
     st.header("Results")
 
+    spacer(1.25)
+
     result_tabs = st.tabs([r["label"] for r in results])
 
     for i, (result_tab, combo) in enumerate(zip(result_tabs, results)):
@@ -4222,7 +4489,7 @@ def render_hybrid(df, dist_matrix, ctx):
         with col_c:
 
             st.plotly_chart(
-                plot_distance_comparison(comparison_df),
+                recolor(plot_distance_comparison(comparison_df), COLOR_RED),
                 use_container_width=True,
                 key=f"hybrid_{run_id}_cmp_distance"
             )
@@ -4230,13 +4497,17 @@ def render_hybrid(df, dist_matrix, ctx):
         with col_d:
 
             st.plotly_chart(
-                plot_time_comparison(comparison_df),
+                recolor(plot_time_comparison(comparison_df), COLOR_RED),
                 use_container_width=True,
                 key=f"hybrid_{run_id}_cmp_time"
             )
 
         st.plotly_chart(
-            plot_improvement_comparison(comparison_df),
+            recolor(
+                plot_improvement_comparison(comparison_df),
+                COLOR_YELLOW,
+                outline=COLOR_OUTLINE
+            ),
             use_container_width=True,
             key=f"hybrid_{run_id}_cmp_improvement"
         )
@@ -4248,6 +4519,7 @@ def render_hybrid(df, dist_matrix, ctx):
 
 if LOGO_PATH.exists():
 
+    # Logo halaman utama: ukuran proporsional tetap (80 px)
     col_logo, col_title = st.columns([1, 11])
 
     with col_logo:
@@ -4276,18 +4548,18 @@ st.caption(
 # Dimuat SEKALI di awal (sebelum tab) supaya kedua tab dan sidebar
 # selalu memakai state yang sama. Cukup pilih algoritma lalu klik Run.
 
-if st.session_state.df is None and DATASET_LARGE.exists():
+if st.session_state.df is None and DATASET_SMALL.exists():
 
     try:
 
-        st.session_state.df = load_data(str(DATASET_LARGE))
+        st.session_state.df = load_data(str(DATASET_SMALL))
 
-        st.session_state.dataset_name = "dataset/large.csv"
+        st.session_state.dataset_name = DATASET_SMALL_NAME
 
     except Exception as e:
 
         st.warning(
-            f"Dataset bawaan (dataset/large.csv) gagal dimuat: {e}"
+            f"Dataset bawaan ({DATASET_SMALL_NAME}) gagal dimuat: {e}"
         )
 
 
@@ -4320,8 +4592,9 @@ with tab_eksperimen:
 
     input_type = st.radio(
         "Pilih sumber data:",
-        ["Dataset Large", "Generate", "Upload", "Manual"],
-        horizontal=True
+        ["Dataset Small", "Generate", "Upload", "Manual"],
+        horizontal=True,
+        key="input_type_radio"
     )
 
 
@@ -4329,29 +4602,29 @@ with tab_eksperimen:
 
 
     # ------------------------------------------------------------
-    # DATASET LARGE (dataset/large.csv)
+    # DATASET SMALL (dataset/small.csv)
     # ------------------------------------------------------------
 
-    if input_type == "Dataset Large":
+    if input_type == "Dataset Small":
 
-        if DATASET_LARGE.exists():
+        if DATASET_SMALL.exists():
 
             st.caption(
-                "Memakai file `dataset/large.csv` (kolom x, y tanpa header; "
+                f"Memakai file `{DATASET_SMALL_NAME}` (kolom x, y tanpa header; "
                 "node diberi nomor otomatis mulai dari 0)."
             )
 
             if st.button(
-                "Gunakan Dataset Large",
+                "Gunakan Dataset Small",
                 type="primary"
             ):
 
-                new_data = str(DATASET_LARGE)
+                new_data = str(DATASET_SMALL)
 
         else:
 
             st.error(
-                "File `dataset/large.csv` tidak ditemukan. "
+                f"File `{DATASET_SMALL_NAME}` tidak ditemukan. "
                 "Pastikan file ada di folder dataset/ pada repo."
             )
 
@@ -4506,7 +4779,7 @@ with tab_eksperimen:
             )
 
             if isinstance(new_data, str):
-                st.session_state.dataset_name = "dataset/large.csv"
+                st.session_state.dataset_name = DATASET_SMALL_NAME
             elif hasattr(new_data, "name"):
                 st.session_state.dataset_name = str(new_data.name)
             else:
@@ -4682,7 +4955,8 @@ with tab_eksperimen:
 
     with st.sidebar:
 
-        # Judul + garis dalam satu wadah agar jaraknya rapat
+        # Divider + judul dalam satu wadah agar jaraknya rapat.
+        # Divider ditaruh DI ATAS "Pengaturan" (di bawah logo).
         try:
             title_box = st.container(key="sidebar_title")
         except TypeError:          # Streamlit versi lama (tanpa parameter key)
@@ -4690,9 +4964,9 @@ with tab_eksperimen:
 
         with title_box:
 
-            st.header("Pengaturan")
-
             st.divider()
+
+            st.header("Pengaturan")
 
         # --------------------------------------------------------
         # MODE
@@ -4959,6 +5233,9 @@ with tab_eksperimen:
                 "Results"
             )
 
+            # jarak antara judul "Results" dan nama algoritma
+            spacer(1.25)
+
 
             for i, result in enumerate(results):
 
@@ -5040,8 +5317,9 @@ with tab_eksperimen:
                 with col1:
 
                     st.plotly_chart(
-                        plot_distance_comparison(
-                            comparison_df
+                        recolor(
+                            plot_distance_comparison(comparison_df),
+                            COLOR_RED
                         ),
                         use_container_width=True,
                         key="independent_cmp_distance"
@@ -5051,8 +5329,9 @@ with tab_eksperimen:
                 with col2:
 
                     st.plotly_chart(
-                        plot_time_comparison(
-                            comparison_df
+                        recolor(
+                            plot_time_comparison(comparison_df),
+                            COLOR_RED
                         ),
                         use_container_width=True,
                         key="independent_cmp_time"
@@ -5060,8 +5339,10 @@ with tab_eksperimen:
 
 
                 st.plotly_chart(
-                    plot_improvement_comparison(
-                        comparison_df
+                    recolor(
+                        plot_improvement_comparison(comparison_df),
+                        COLOR_YELLOW,
+                        outline=COLOR_OUTLINE
                     ),
                     use_container_width=True,
                     key="independent_cmp_improvement"
