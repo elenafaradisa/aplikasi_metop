@@ -5017,10 +5017,10 @@ with tab_eksperimen:
 
     st.header("📂 Input Data")
 
-    input_type = st.radio(
+    input_type = st.pills(
         "Pilih sumber data:",
         ["Dataset Small", "Generate", "Upload", "Manual"],
-        horizontal=True,
+        default="Dataset Small",
         key="input_type"
     )
 
