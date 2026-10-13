@@ -801,48 +801,35 @@ st.markdown(
         font-weight: 600;
     }
 
-    .st-key-input_type [data-testid="stButtonGroup"] {
-        display: inline-flex !important;
-        width: fit-content !important;
-        max-width: 100%;
+    .st-key-input_type [role="radiogroup"] {
+        gap: 0.6rem;
         flex-wrap: wrap;
-        gap: 0.2rem;
-        padding: 0.25rem;
+    }
+    .st-key-input_type label[data-baseweb="radio"] {
+        margin: 0 !important;
+        padding: 0.4rem 1.3rem;
         background: #FFFFFF;
-        border: 1px solid rgba(45, 18, 13, 0.10);
-        border-radius: 14px;
-        box-shadow: 0 2px 8px rgba(45, 18, 13, 0.08);
+        border: 1.5px solid var(--rosewood);
+        border-radius: 999px;
+        box-shadow: 0 1px 3px rgba(45, 18, 13, 0.10);
+        cursor: pointer;
+        transition: all 0.15s ease;
     }
-    .st-key-input_type [data-testid="stButtonGroup"] button {
-        padding: 0.35rem 0.95rem !important;
-        min-height: 0 !important;
-        background: transparent !important;
-        border: none !important;
-        border-radius: 10px !important;
-        box-shadow: none !important;
-        transition: background 0.15s ease, color 0.15s ease;
+    .st-key-input_type label[data-baseweb="radio"] > div:first-child {
+        display: none !important;
     }
-    .st-key-input_type [data-testid="stButtonGroup"] button p,
-    .st-key-input_type [data-testid="stButtonGroup"] button span {
-        color: #6B4A3A !important;
-        font-size: 0.9rem !important;
-        font-weight: 500 !important;
+    .st-key-input_type label[data-baseweb="radio"] p {
+        font-weight: 600;
     }
-    .st-key-input_type [data-testid="stButtonGroup"] button:hover {
-        background: rgba(107, 11, 12, 0.07) !important;
+    .st-key-input_type label[data-baseweb="radio"]:hover {
+        background: var(--botticelli-soft);
     }
-    /* yang terpilih */
-    .st-key-input_type [data-testid="stButtonGroup"] button[data-testid="stBaseButton-pillsActive"],
-    .st-key-input_type [data-testid="stButtonGroup"] button[kind="pillsActive"] {
-        background: var(--rosewood) !important;
-        box-shadow: 0 2px 6px rgba(107, 11, 12, 0.30) !important;
+    .st-key-input_type label[data-baseweb="radio"]:has(input:checked) {
+        background: var(--rosewood);
+        box-shadow: 0 3px 8px rgba(107, 11, 12, 0.35);
     }
-    .st-key-input_type [data-testid="stButtonGroup"] button[data-testid="stBaseButton-pillsActive"] p,
-    .st-key-input_type [data-testid="stButtonGroup"] button[kind="pillsActive"] p,
-    .st-key-input_type [data-testid="stButtonGroup"] button[data-testid="stBaseButton-pillsActive"] span,
-    .st-key-input_type [data-testid="stButtonGroup"] button[kind="pillsActive"] span {
+    .st-key-input_type label[data-baseweb="radio"]:has(input:checked) p {
         color: #FFFFFF !important;
-        font-weight: 600 !important;
     }
 
     /* Kartu metrik */
