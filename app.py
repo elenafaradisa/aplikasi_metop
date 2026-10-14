@@ -6128,9 +6128,9 @@ with tab_eksperimen:
     else:
 
         render_hybrid(df, dist_matrix, hybrid_ctx)
-            st.divider()
+        st.divider()
 
-                render_report_export(
+        render_report_export(
                                     "📋 Salin semua hasil (untuk laporan)",
                                     lambda detail: hybrid_report(df, dist_matrix, results, detail),
                                     "laporan_hybrid.md",
