@@ -319,8 +319,16 @@ st.markdown(
         color: rgba(255, 255, 255, 0.62) !important;
         font-size: 0.8rem !important;
     }
-    [data-testid="stSidebar"] [data-testid="stTooltipIcon"] svg {
-        color: rgba(255, 255, 255, 0.6);
+    [data-testid="stSidebar"] [data-testid="stTooltipIcon"] svg,
+    [data-testid="stSidebar"] label svg,
+    [data-testid="stSidebar"] .stTooltipIcon svg {
+        fill: #E2EDF0 !important;
+        color: #E2EDF0 !important;
+    }
+    
+    [data-testid="stSidebar"] [data-testid="stTooltipIcon"] svg path,
+    [data-testid="stSidebar"] label svg path {
+        fill: #E2EDF0 !important;
     }
 
     /* ---- Kotak info / peringatan ---- */
