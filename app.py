@@ -5295,7 +5295,7 @@ def render_hybrid(df, dist_matrix, ctx):
     st.divider()
 
     render_report_export(
-        "📋 Salin semua hasil (untuk laporan)",
+        "📋 Salin Hasil Eksperimen",
         lambda detail: hybrid_report(df, dist_matrix, results, detail),
         "laporan_hybrid.md",
         "report_hybrid"
@@ -6126,7 +6126,7 @@ with tab_eksperimen:
             st.divider()
 
             render_report_export(
-                "📋 Salin semua hasil (untuk laporan)",
+                "📋 Salin Hasil Eksperimen",
                 lambda detail: independent_report(
                     df, dist_matrix, results, detail
                 ),
