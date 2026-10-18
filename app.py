@@ -185,17 +185,26 @@ st.markdown(
     /* Hierarki ukuran + jarak: Results (h2) > nama algoritma (h3) */
     [data-testid="stMain"] h2 {
         font-size: 2.1rem !important;
-        margin-top: 0.5rem !important;
-        margin-bottom: 1.2rem !important;
+        padding: 0 !important;
+        margin: 0 0 0.2rem 0 !important;
     }
     [data-testid="stMain"] h3 {
         font-size: 1.4rem !important;
-        margin-top: 1.6rem !important;
-        margin-bottom: 0.8rem !important;
+        padding: 0 !important;
+        margin: 0 0 0.2rem 0 !important;
     }
-
-    /* Garis pemisah lembut */
-    hr { border-color: rgba(107, 11, 12, 0.18) !important; }
+    [data-testid="stMain"] h4 {
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+    
+    /* Garis pemisah lembut + jarak antar bagian */
+    hr {
+        border-color: rgba(107, 11, 12, 0.18) !important;
+    }
+    [data-testid="stMain"] hr {
+        margin: 1rem 0 !important;
+    }
 
     /* ======================================================
        SIDEBAR  (gaya baru: maroon gradasi, kartu, ikon)
@@ -3066,7 +3075,6 @@ def render_independent_result(
     # Nama algoritma dibuat lebih kecil (h3) dari judul "Results" (h2),
     # dengan jarak di atasnya.
 
-    spacer(0.8)
 
     st.subheader(method)
 
@@ -4702,7 +4710,7 @@ def render_hybrid(df, dist_matrix, ctx):
 
     st.header("Results")
 
-    spacer(0.5)
+
 
     result_tabs = st.tabs([r["label"] for r in results])
 
@@ -5501,7 +5509,7 @@ with st.container():
                 "Results"
             )
 
-            spacer(0.5)
+   
 
 
             for i, result in enumerate(results):
