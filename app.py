@@ -1028,49 +1028,96 @@ ALGORITHMS = {
     # --------------------------------------------------------
 
     "Simulated Annealing": {
-    "type": "Metaheuristic",
-    "needs_start_node": False,
-    "needs_initial_route": True,
-    "function": simulated_annealing,
-    "description": "Mencari solusi dengan menerima beberapa solusi yang lebih buruk secara probabilistik.",
-    "parameters": {
-        "initial_temp": {"type": "float", "default": 100.0, "min": 0.01, "max": 100000.0, "step": 10.0,
-            "help": "Suhu awal. Sebaiknya sebanding dengan rata-rata jarak antar node."},
-        "cooling_rate": {"type": "float", "default": 0.99, "min": 0.01, "max": 0.999, "step": 0.001,
-            "help": "Faktor pengali suhu (semakin dekat 1 = pendinginan semakin lambat)."},
-        "min_temp": {"type": "float", "default": 0.1, "min": 0.0001, "max": 100.0, "step": 0.01,
-            "help": "Suhu minimum sebelum pencarian berhenti."},
-        "move_operator": {"type": "select", "options": ["2-opt", "swap", "insertion"], "default": "2-opt",
-            "help": "Cara membuat kandidat tetangga secara acak."},
-        "iter_per_temp": {"type": "int", "default": 1, "min": 1, "max": 1000, "step": 1,
-            "help": "Jumlah langkah pada setiap level suhu."},
-        "max_iter": {"type": "int", "default": 1000, "min": 1, "max": 10000, "step": 1,
-            "help": "Batas maksimum langkah."},
-        "stop_criterion": {"type": "select", "options": ["max_iter", "convergence"], "default": "max_iter",
-            "help": "Convergence: berhenti jika jarak terbaik tidak membaik selama N langkah."},
-        "patience": {"type": "int", "default": 200, "min": 1, "max": 10000, "step": 1,
-            "show_if": ("stop_criterion", "convergence"),
-            "help": "Jumlah langkah tanpa perbaikan sebelum dianggap konvergen."},
-        "seed": {"type": "int", "default": 42, "min": 0, "max": 99999, "step": 1,
-            "help": "Seed untuk menjaga proses acak tetap konsisten."},
-    }
-},
+        "type": "Metaheuristic",
+        "needs_start_node": False,
+        "needs_initial_route": True,
+        "function": simulated_annealing,
+        "description":
+            "Mencari solusi dengan menerima beberapa solusi yang lebih buruk secara probabilistik.",
+        "parameters": {
+            "initial_temp": {
+                "type": "float", "default": 100.0, "min": 0.01,
+                "max": 100000.0, "step": 10.0,
+                "help": "Suhu awal. Sebaiknya sebanding dengan rata-rata jarak antar node."
+            },
+            "cooling_rate": {
+                "type": "float", "default": 0.99, "min": 0.01,
+                "max": 0.999, "step": 0.001,
+                "help": "Faktor pengali suhu. Makin dekat 1, pendinginan makin lambat."
+            },
+            "min_temp": {
+                "type": "float", "default": 0.1, "min": 0.0001,
+                "max": 100.0, "step": 0.01,
+                "help": "Suhu minimum sebelum pencarian berhenti."
+            },
+            "move_operator": {
+                "type": "select", "options": ["2-opt", "swap", "insertion"],
+                "default": "2-opt",
+                "help": "Cara membuat kandidat tetangga secara acak."
+            },
+            "iter_per_temp": {
+                "type": "int", "default": 1, "min": 1, "max": 1000, "step": 1,
+                "help": "Jumlah langkah pada setiap level suhu."
+            },
+            "max_iter": {
+                "type": "int", "default": 1000, "min": 1, "max": 10000, "step": 1,
+                "help": "Batas maksimum langkah."
+            },
+            "stop_criterion": {
+                "type": "select", "options": ["max_iter", "convergence"],
+                "default": "max_iter",
+                "help": "Convergence: berhenti jika jarak terbaik tidak membaik selama N langkah."
+            },
+            "patience": {
+                "type": "int", "default": 200, "min": 1, "max": 10000, "step": 1,
+                "show_if": ("stop_criterion", "convergence"),
+                "help": "Jumlah langkah tanpa perbaikan sebelum dianggap konvergen."
+            },
+            "seed": {
+                "type": "int", "default": 42, "min": 0, "max": 99999, "step": 1,
+                "help": "Seed untuk menjaga proses acak tetap konsisten."
+            }
+        }
+    },
+
 
     "Tabu Search": {
         "type": "Metaheuristic",
         "needs_start_node": False,
         "needs_initial_route": True,
         "function": tabu_search,
-        "description": "Mencari solusi dengan menggunakan tabu list untuk menghindari perpindahan yang sama.",
+        "description":
+            "Mencari solusi dengan menggunakan tabu list untuk menghindari perpindahan yang sama.",
         "parameters": {
-            "move_type": {"type": "select", "options": ["2opt", "3opt", "swap"], "default": "2opt",
-                "help": "Mekanisme neighborhood. 3opt jauh lebih berat (O(n³) kandidat per iterasi)."},
-            "max_iter": {"type": "int", "default": 300, "min": 1, "max": 10000, "step": 1,
-                "help": "Batas maksimum iterasi."},
-            "tabu_tenure": {"type": "int", "default": 5, "min": 1, "max": 100, "step": 1,
-                "help": "Lama edge baru dilarang dibongkar. Patokan: sekitar √n."},
-            "stop_criterion": {"type": "select", "options": ["max_iter", "convergence"], "default": "convergence",
-                "help": "Convergence: berhenti jika jarak terbaik tid
+            "move_type": {
+                "type": "select", "options": ["2opt", "3opt", "swap"],
+                "default": "2opt",
+                "help": "Mekanisme neighborhood. 3opt jauh lebih berat (O(n^3) kandidat per iterasi)."
+            },
+            "max_iter": {
+                "type": "int", "default": 300, "min": 1, "max": 10000, "step": 1,
+                "help": "Batas maksimum iterasi."
+            },
+            "tabu_tenure": {
+                "type": "int", "default": 5, "min": 1, "max": 100, "step": 1,
+                "help": "Lama edge baru dilarang dibongkar. Patokan: sekitar akar n."
+            },
+            "stop_criterion": {
+                "type": "select", "options": ["max_iter", "convergence"],
+                "default": "convergence",
+                "help": "Convergence: berhenti jika jarak terbaik tidak membaik selama N iterasi."
+            },
+            "patience": {
+                "type": "int", "default": 30, "min": 1, "max": 10000, "step": 1,
+                "show_if": ("stop_criterion", "convergence"),
+                "help": "Jumlah iterasi tanpa perbaikan. Sebaiknya minimal sebesar tabu tenure."
+            },
+            "verbose_history": {
+                "type": "bool", "default": False,
+                "help": "Menyimpan history proses pencarian."
+            }
+        }
+    }
 
 # ============================================================
 # SESSION STATE
@@ -3613,63 +3660,39 @@ def run_algorithm(
     # SIMULATED ANNEALING
     # --------------------------------------------------------
 
-    elif method == "Simulated Annealing":
+        elif method == "Simulated Annealing":
+
+        convergence = (
+            parameters.get("stop_criterion", "max_iter") == "convergence"
+        )
 
         return simulated_annealing(
             dist_matrix,
             initial_route=initial_route,
-            initial_temp=parameters.get(
-                "initial_temp",
-                1000.0
+            initial_temp=parameters.get("initial_temp", 100.0),
+            cooling_rate=parameters.get("cooling_rate", 0.99),
+            min_temp=parameters.get("min_temp", 0.1),
+            max_iter=int(parameters.get("max_iter", 1000)),
+            iter_per_temp=int(parameters.get("iter_per_temp", 1)),
+            move_operator=parameters.get("move_operator", "2-opt"),
+            patience=(
+                int(parameters.get("patience", 200)) if convergence else None
             ),
-            cooling_rate=parameters.get(
-                "cooling_rate",
-                0.95
-            ),
-            min_temp=parameters.get(
-                "min_temp",
-                0.01
-            ),
-            max_iter=parameters.get(
-                "max_iter",
-                10
-            ),
-            seed=parameters.get(
-                "seed",
-                42
-            )
+            seed=int(parameters.get("seed", 42))
         )
-
-
-    # --------------------------------------------------------
-    # TABU SEARCH
-    # --------------------------------------------------------
 
     elif method == "Tabu Search":
 
         return tabu_search(
             initial_route,
             dist_matrix,
-            max_iter=parameters.get(
-                "max_iter",
-                100
-            ),
-            tabu_tenure=parameters.get(
-                "tabu_tenure",
-                3
-            ),
-            verbose_history=parameters.get(
-                "verbose_history",
-                False
-            )
+            max_iter=int(parameters.get("max_iter", 300)),
+            tabu_tenure=int(parameters.get("tabu_tenure", 5)),
+            move_type=parameters.get("move_type", "2opt"),
+            stop_criterion=parameters.get("stop_criterion", "convergence"),
+            patience=int(parameters.get("patience", 30)),
+            verbose_history=parameters.get("verbose_history", False)
         )
-
-    else:
-
-        raise ValueError(
-            f"Algoritma '{method}' tidak ditemukan."
-        )
-
 
 # ============================================================
 # RUN ONE INDEPENDENT ALGORITHM
@@ -4061,7 +4084,25 @@ def render_initial_panel(method, selected_algorithms, df):
 
 def render_parameter_panel(method, ns="independent"):
 
-    for parameter, config in ALGORITHMS[method]["parameters"].items():
+    params = ALGORITHMS[method]["parameters"]
+
+    for parameter, config in params.items():
+
+        condition = config.get("show_if")
+
+        if condition:
+
+            dep_name, dep_value = condition
+
+            current = cfg_get(
+                method,
+                f"param_{dep_name}",
+                params[dep_name]["default"],
+                ns
+            )
+
+            if current != dep_value:
+                continue
 
         label = parameter.replace("_", " ").title()
 
@@ -4070,11 +4111,7 @@ def render_parameter_panel(method, ns="independent"):
         if config["type"] == "int":
 
             cfg_number(
-                method,
-                name,
-                label,
-                int(config["default"]),
-                ns=ns,
+                method, name, label, int(config["default"]), ns=ns,
                 min_value=int(config["min"]),
                 max_value=int(config["max"]),
                 step=int(config["step"]),
@@ -4084,11 +4121,7 @@ def render_parameter_panel(method, ns="independent"):
         elif config["type"] == "float":
 
             cfg_number(
-                method,
-                name,
-                label,
-                float(config["default"]),
-                ns=ns,
+                method, name, label, float(config["default"]), ns=ns,
                 min_value=float(config["min"]),
                 max_value=float(config["max"]),
                 step=float(config["step"]),
@@ -4098,26 +4131,16 @@ def render_parameter_panel(method, ns="independent"):
         elif config["type"] == "select":
 
             cfg_selectbox(
-                method,
-                name,
-                label,
-                config["options"],
-                default=config["default"],
-                ns=ns,
-                help=config["help"]
+                method, name, label, config["options"],
+                default=config["default"], ns=ns, help=config["help"]
             )
 
         elif config["type"] == "bool":
 
             cfg_checkbox(
-                method,
-                name,
-                label,
-                config["default"],
-                ns=ns,
-                help=config["help"]
+                method, name, label, config["default"],
+                ns=ns, help=config["help"]
             )
-
 
 # ------------------------------------------------------------
 # BANGUN initial_solutions & parameter untuk SEMUA algoritma terpilih
