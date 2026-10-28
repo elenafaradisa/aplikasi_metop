@@ -28,7 +28,8 @@ from algorithms.simulated_annealing import (
 )
 
 from algorithms.tabu_search import (
-    tabu_search
+    tabu_search,
+    MOVE_TYPES as TABU_MOVES
 )
 
 # Pembacaan data + logo + dataset bawaan digabung di utils/load_data.py
@@ -1027,104 +1028,49 @@ ALGORITHMS = {
     # --------------------------------------------------------
 
     "Simulated Annealing": {
-        "type": "Metaheuristic",
-        "needs_start_node": False,
-        "needs_initial_route": True,
-        "function": simulated_annealing,
-        "description":
-            "Mencari solusi dengan menerima beberapa solusi yang lebih buruk secara probabilistik.",
-        "parameters": {
-            "initial_temp": {
-                "type": "float",
-                "default": 1000.0,
-                "min": 0.01,
-                "max": 100000.0,
-                "step": 10.0,
-                "help":
-                    "Suhu awal proses pencarian."
-            },
-            "cooling_rate": {
-                "type": "float",
-                "default": 0.95,
-                "min": 0.01,
-                "max": 0.999,
-                "step": 0.01,
-                "help":
-                    "Seberapa cepat suhu diturunkan."
-            },
-            "min_temp": {
-                "type": "float",
-                "default": 0.01,
-                "min": 0.0001,
-                "max": 100.0,
-                "step": 0.01,
-                "help":
-                    "Suhu minimum sebelum pencarian berhenti."
-            },
-            "max_iter": {
-                "type": "int",
-                "default": 10,
-                "min": 1,
-                "max": 10000,
-                "step": 1,
-                "help":
-                    "Batas maksimum iterasi."
-            },
-            "seed": {
-                "type": "int",
-                "default": 42,
-                "min": 0,
-                "max": 99999,
-                "step": 1,
-                "help":
-                    "Seed untuk menjaga proses acak tetap konsisten."
-            },
-            "verbose_history": {
-                "type": "bool",
-                "default": False,
-                "help":
-                    "Menyimpan history proses pencarian."
-            }
-        }
-    },
-
+    "type": "Metaheuristic",
+    "needs_start_node": False,
+    "needs_initial_route": True,
+    "function": simulated_annealing,
+    "description": "Mencari solusi dengan menerima beberapa solusi yang lebih buruk secara probabilistik.",
+    "parameters": {
+        "initial_temp": {"type": "float", "default": 100.0, "min": 0.01, "max": 100000.0, "step": 10.0,
+            "help": "Suhu awal. Sebaiknya sebanding dengan rata-rata jarak antar node."},
+        "cooling_rate": {"type": "float", "default": 0.99, "min": 0.01, "max": 0.999, "step": 0.001,
+            "help": "Faktor pengali suhu (semakin dekat 1 = pendinginan semakin lambat)."},
+        "min_temp": {"type": "float", "default": 0.1, "min": 0.0001, "max": 100.0, "step": 0.01,
+            "help": "Suhu minimum sebelum pencarian berhenti."},
+        "move_operator": {"type": "select", "options": ["2-opt", "swap", "insertion"], "default": "2-opt",
+            "help": "Cara membuat kandidat tetangga secara acak."},
+        "iter_per_temp": {"type": "int", "default": 1, "min": 1, "max": 1000, "step": 1,
+            "help": "Jumlah langkah pada setiap level suhu."},
+        "max_iter": {"type": "int", "default": 1000, "min": 1, "max": 10000, "step": 1,
+            "help": "Batas maksimum langkah."},
+        "stop_criterion": {"type": "select", "options": ["max_iter", "convergence"], "default": "max_iter",
+            "help": "Convergence: berhenti jika jarak terbaik tidak membaik selama N langkah."},
+        "patience": {"type": "int", "default": 200, "min": 1, "max": 10000, "step": 1,
+            "show_if": ("stop_criterion", "convergence"),
+            "help": "Jumlah langkah tanpa perbaikan sebelum dianggap konvergen."},
+        "seed": {"type": "int", "default": 42, "min": 0, "max": 99999, "step": 1,
+            "help": "Seed untuk menjaga proses acak tetap konsisten."},
+    }
+},
 
     "Tabu Search": {
         "type": "Metaheuristic",
         "needs_start_node": False,
         "needs_initial_route": True,
         "function": tabu_search,
-        "description":
-            "Mencari solusi dengan menggunakan tabu list untuk menghindari perpindahan yang sama.",
+        "description": "Mencari solusi dengan menggunakan tabu list untuk menghindari perpindahan yang sama.",
         "parameters": {
-            "max_iter": {
-                "type": "int",
-                "default": 100,
-                "min": 1,
-                "max": 10000,
-                "step": 1,
-                "help":
-                    "Batas maksimum iterasi."
-            },
-            "tabu_tenure": {
-                "type": "int",
-                "default": 3,
-                "min": 1,
-                "max": 100,
-                "step": 1,
-                "help":
-                    "Lama perpindahan disimpan dalam tabu list."
-            },
-            "verbose_history": {
-                "type": "bool",
-                "default": False,
-                "help":
-                    "Menyimpan history proses pencarian."
-            }
-        }
-    }
-}
-
+            "move_type": {"type": "select", "options": ["2opt", "3opt", "swap"], "default": "2opt",
+                "help": "Mekanisme neighborhood. 3opt jauh lebih berat (O(n³) kandidat per iterasi)."},
+            "max_iter": {"type": "int", "default": 300, "min": 1, "max": 10000, "step": 1,
+                "help": "Batas maksimum iterasi."},
+            "tabu_tenure": {"type": "int", "default": 5, "min": 1, "max": 100, "step": 1,
+                "help": "Lama edge baru dilarang dibongkar. Patokan: sekitar √n."},
+            "stop_criterion": {"type": "select", "options": ["max_iter", "convergence"], "default": "convergence",
+                "help": "Convergence: berhenti jika jarak terbaik tid
 
 # ============================================================
 # SESSION STATE
