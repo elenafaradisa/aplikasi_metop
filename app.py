@@ -3729,22 +3729,7 @@ def hybrid_report(df, dist_matrix, results, include_detail=False):
 
     if len(results) >= 2:
 
-        baselines = {}
-
-        for r in results:
-
-            s1 = r["stage1"]
-
-            baselines.setdefault(s1["method"], {
-                "method": f"{s1['method']} (tanpa optimasi)",
-                "initial_distance": None,
-                "final_distance": s1["final_distance"],
-                "execution_time": s1["execution_time"]
-            })
-
-        entries = list(results) + list(baselines.values())
-
-        comparison_df = sort_by_distance(create_comparison_table(entries))
+        comparison_df = sort_by_distance(create_comparison_table(results))
 
         lines += ["## Comparison", "", df_to_markdown(comparison_df), ""]
 
@@ -4910,33 +4895,16 @@ def render_hybrid(df, dist_matrix, ctx):
 
     if len(results) >= 2:
 
-        # Pembanding: hasil Constructive saja (tanpa optimasi)
-        baselines = {}
-
-        for r in results:
-
-            s1 = r["stage1"]
-
-            baselines.setdefault(s1["method"], {
-                "method": f"{s1['method']} (tanpa optimasi)",
-                "initial_distance": None,
-                "final_distance": s1["final_distance"],
-                "execution_time": s1["execution_time"]
-            })
-
-        entries = list(results) + list(baselines.values())
-
         st.divider()
 
         st.header("Comparison")
 
         st.caption(
-            "Hybrid dibandingkan satu sama lain dan dengan hasil "
-            "Constructive saja (tanpa optimasi)."
+            "Perbandingan antar kombinasi Hybrid."
         )
 
         comparison_df = sort_by_distance(
-            create_comparison_table(entries)
+            create_comparison_table(results)
         )
 
         st.dataframe(
