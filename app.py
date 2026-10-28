@@ -961,7 +961,7 @@ ALGORITHMS = {
                     "Seed untuk mengontrol proses acak."
             }
         }
-    },
+    }}
 
 
     # --------------------------------------------------------
