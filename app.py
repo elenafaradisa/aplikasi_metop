@@ -978,7 +978,7 @@ ALGORITHMS = {
         "parameters": {
             "max_iter": {
                 "type": "int",
-                "default": 100,
+                "default": 1000,
                 "min": 1,
                 "max": 10000,
                 "step": 1,
@@ -1005,7 +1005,7 @@ ALGORITHMS = {
         "parameters": {
             "max_iter": {
                 "type": "int",
-                "default": 100,
+                "default": 1000,
                 "min": 1,
                 "max": 10000,
                 "step": 1,
