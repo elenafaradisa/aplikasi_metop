@@ -1115,12 +1115,12 @@ ALGORITHMS = {
             "Mencari solusi dengan menerima beberapa solusi yang lebih buruk secara probabilistik.",
         "parameters": {
             "initial_temp": {
-                "type": "float", "default": 5.0, "default_hybrid": 1.0, "min": 0.01,
+                "type": "float", "default": 10.0, "default_hybrid": 0.5, "min": 0.01,
                 "max": 100000.0, "step": 0.5, "format": "%.2f",
-                "help": "Suhu awal. Terlalu tinggi = rute awal yang bagus dirusak (Hybrid); terlalu rendah = SA tidak sempat keluar dari rute acak (Independent). Default Independent 5, Hybrid 1 (untuk skala data kecil; skala 0-100 naikkan sekitar 10x)."
+                "help": "Suhu awal. Terlalu tinggi = rute awal yang bagus dirusak (Hybrid); terlalu rendah = SA tidak sempat keluar dari rute acak (Independent). Default Independent 10, Hybrid 0.5 (untuk skala data kecil seperti small.csv; skala 0-100 naikkan sekitar 10x)."
             },
             "cooling_rate": {
-                "type": "float", "default": 0.998, "default_hybrid": 0.995, "min": 0.01,
+                "type": "float", "default": 0.998, "default_hybrid": 0.998, "min": 0.01,
                 "max": 0.999, "step": 0.001, "format": "%.3f",
                 "help": "Faktor pengali suhu. Makin dekat 1, pendinginan makin lambat."
             },
@@ -1139,7 +1139,7 @@ ALGORITHMS = {
                 "help": "Jumlah langkah pada setiap level suhu."
             },
             "max_iter": {
-                "type": "int", "default": 5000, "default_hybrid": 1000, "min": 1, "max": 10000, "step": 1,
+                "type": "int", "default": 5000, "default_hybrid": 3000, "min": 1, "max": 10000, "step": 1,
                 "help": "Batas maksimum langkah."
             },
             "stop_criterion": {
@@ -3867,7 +3867,7 @@ def run_algorithm(
         return simulated_annealing(
             dist_matrix,
             initial_route=initial_route,
-            initial_temp=parameters.get("initial_temp", 5.0),
+            initial_temp=parameters.get("initial_temp", 10.0),
             cooling_rate=parameters.get("cooling_rate", 0.998),
             min_temp=parameters.get("min_temp", 0.01),
             max_iter=int(parameters.get("max_iter", 1000)),
