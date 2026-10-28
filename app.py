@@ -1115,12 +1115,12 @@ ALGORITHMS = {
             "Mencari solusi dengan menerima beberapa solusi yang lebih buruk secara probabilistik.",
         "parameters": {
             "initial_temp": {
-                "type": "float", "default": 100.0, "min": 0.01,
-                "max": 100000.0, "step": 10.0,
-                "help": "Suhu awal. Sebaiknya sebanding dengan rata-rata jarak antar node."
+                "type": "float", "default": 1.0, "min": 0.01,
+                "max": 100000.0, "step": 0.5, "format": "%.2f",
+                "help": "Suhu awal. Patokan: sekitar 0.5 x rata-rata panjang satu edge pada rute awal (total jarak / jumlah node). Terlalu tinggi = rute awal yang bagus malah dirusak."
             },
             "cooling_rate": {
-                "type": "float", "default": 0.99, "min": 0.01,
+                "type": "float", "default": 0.995, "min": 0.01,
                 "max": 0.999, "step": 0.001, "format": "%.3f",
                 "help": "Faktor pengali suhu. Makin dekat 1, pendinginan makin lambat."
             },
@@ -3867,8 +3867,8 @@ def run_algorithm(
         return simulated_annealing(
             dist_matrix,
             initial_route=initial_route,
-            initial_temp=parameters.get("initial_temp", 100.0),
-            cooling_rate=parameters.get("cooling_rate", 0.99),
+            initial_temp=parameters.get("initial_temp", 1.0),
+            cooling_rate=parameters.get("cooling_rate", 0.995),
             min_temp=parameters.get("min_temp", 0.01),
             max_iter=int(parameters.get("max_iter", 1000)),
             iter_per_temp=int(parameters.get("iter_per_temp", 1)),
